@@ -378,7 +378,7 @@ void sendCKPCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte
   // Sensible defaults for the heat pump mode
 
   byte powerMode     = false;
-  byte operatingMode = PANASONIC_AIRCON1_MODE_HEAT | PANASONIC_AIRCON1_MODE_KEEP;
+  byte operatingMode = PANASONIC_AIRCON1_MODE_KEEP;
   byte fanSpeed      = PANASONIC_AIRCON1_FAN_AUTO;
   byte temperature   = 23;
   byte swingV        = PANASONIC_AIRCON1_VS_UP;
@@ -407,6 +407,9 @@ void sendCKPCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte
       break;
     case 5:
       operatingMode |= PANASONIC_AIRCON1_MODE_FAN;
+      break;
+    default:
+      operatingMode |= PANASONIC_AIRCON1_MODE_HEAT;
       break;
   }
 
@@ -598,73 +601,6 @@ void sendDKECmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte
 }
 
 
-// Midea MSR1-12HRN1-QC2 + MOA1-12HN1-QC2 numeric values to command bytes (Ultimate Pro Plus Basic 13FP)
-
-void sendMideaCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte temperatureCmd, byte swingVCmd, byte swingHCmd)
-{
-  // Sensible defaults for the heat pump mode
-
-  byte operatingMode = MIDEA_AIRCON1_MODE_HEAT;
-  byte fanSpeed      = MIDEA_AIRCON1_FAN_AUTO;
-  byte temperature   = 23;
-
-
-  switch (powerModeCmd)
-  {
-    case 0:
-      // OFF is a special case
-      operatingMode = MIDEA_AIRCON1_MODE_OFF;
-      sendMidea(operatingMode, fanSpeed, temperature);
-      return;
-  }
-
-  switch (operatingModeCmd)
-  {
-    case 1:
-      operatingMode = MIDEA_AIRCON1_MODE_AUTO;
-      break;
-    case 2:
-      operatingMode = MIDEA_AIRCON1_MODE_HEAT;
-      break;
-    case 3:
-      operatingMode = MIDEA_AIRCON1_MODE_COOL;
-      break;
-    case 4:
-      operatingMode = MIDEA_AIRCON1_MODE_DRY;
-      break;
-    case 5:
-      operatingMode = MIDEA_AIRCON1_MODE_FAN;
-      break;
-    case 6:
-      // FP is a special case
-      operatingMode = MIDEA_AIRCON1_MODE_FP;
-      sendMidea(operatingMode, fanSpeed, temperature);
-      return;
-  }
-
-  switch (fanSpeedCmd)
-  {
-    case 1:
-      fanSpeed = MIDEA_AIRCON1_FAN_AUTO;
-      break;
-    case 2:
-      fanSpeed = MIDEA_AIRCON1_FAN1;
-      break;
-    case 3:
-      fanSpeed = MIDEA_AIRCON1_FAN2;
-      break;
-    case 4:
-      fanSpeed = MIDEA_AIRCON1_FAN3;
-      break;
-  }
-
-  if ( temperatureCmd > 15 && temperatureCmd < 31)
-  {
-    temperature = temperatureCmd;
-  }
-
-  sendMidea(operatingMode, fanSpeed, temperature);
-}
 
 
 // Send a byte over IR
@@ -864,6 +800,12 @@ void loop()
 
         // This allocates memory which must be free'd
         char *json = aJson.print(jsonResponseObject);
+
+        if ( json == NULL )
+        {
+          Serial.println(F("Out of memory!"));
+        }
+
         sendWPNotification(host, atoi(port), path, json, 3);
         free(json);
 
@@ -877,7 +819,7 @@ void loop()
         }
         else if (strcmp(model->valuestring, "midea") == 0)
         {
-          sendDKECmd(power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
+          //sendMideaCmd(power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
         }
       }
     }
@@ -903,6 +845,10 @@ void sendWPNotification(char *host, int port, char *path, char *payload, int not
     } else {
         Serial.println(F("Failed to connect to PUSH channel"));
     }
+
+    // Debug: show the amount of free SRAM
+    Serial.print(F("PUSH: free RAM: "));
+    Serial.println(freeRam());
 
     // HTTP header, note the notification headers
     client.print(F("POST "));
@@ -942,10 +888,13 @@ void sendWPNotification(char *host, int port, char *path, char *payload, int not
 
     // The actual payload
     client.print(payload);
+    Serial.println(F("Payload sent:\n---"));
+    Serial.println(payload);
 
     // Print out the HTTP request response
     Serial.println(F("Response:\n---"));
     while (client.connected()) {
+      feedWatchdog();
       while (client.available()) {
         char c = client.read();
         Serial.print(c);
