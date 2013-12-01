@@ -723,7 +723,7 @@ void loop()
     Serial.print(F("Received WP packet of size "));
     Serial.println(WPPacketSize);
 
-    // Allocate space for the message, clear the buffes
+    // Allocate space for the message, clear the buffer
     messageBuff = (char*)malloc(WPPacketSize+1);
     memset(messageBuff, 0, WPPacketSize+1);
 
@@ -758,19 +758,16 @@ void loop()
     path[0] = '\0';
     path++;
 
-    // Create the response object
-    jsonResponseObject=aJson.createObject();
-
     if (strcmp(command->valuestring, "identify") == 0)
     {
-      aJson.addItemToObject(jsonResponseObject, "command", aJson.createItem(command->valuestring));
-      aJson.addItemToObject(jsonResponseObject, "identity", aJson.createItem(macstr));
+     aJson.addItemToObject(jsonObject, "identity", aJson.createItem(macstr));
 
       // Send a RAW notification back to the Windows Phone
       Serial.println(F("Sending RAW notification"));
 
       // This allocates memory which must be free'd
-      char *json = aJson.print(jsonResponseObject);
+      char *json = aJson.print(jsonObject);
+
       sendWPNotification(host, atoi(port), path, json, 3);
       free(json);
     }
@@ -788,18 +785,11 @@ void loop()
         aJsonObject* fan = aJson.getObjectItem(jsonObject, "fan");
         aJsonObject* temperature = aJson.getObjectItem(jsonObject, "temperature");
 
-        aJson.addItemToObject(jsonResponseObject, "command", aJson.createItem(command->valuestring));
-        aJson.addItemToObject(jsonResponseObject, "model", aJson.createItem(model->valuestring));
-        aJson.addItemToObject(jsonResponseObject, "power", aJson.createItem(power->valueint));
-        aJson.addItemToObject(jsonResponseObject, "mode", aJson.createItem(mode->valueint));
-        aJson.addItemToObject(jsonResponseObject, "fan", aJson.createItem(fan->valueint));
-        aJson.addItemToObject(jsonResponseObject, "temperature", aJson.createItem(temperature->valueint));
-
         // Send a RAW notification back to the Windows Phone
         Serial.println(F("Sending RAW notification"));
 
         // This allocates memory which must be free'd
-        char *json = aJson.print(jsonResponseObject);
+        char *json = aJson.print(jsonObject);
 
         if ( json == NULL )
         {
