@@ -13,6 +13,7 @@
 #include "avr/pgmspace.h"
 #include <avr/wdt.h>      // For the hardware watchdog
 #include "Ethernet.h"
+#include <Timer.h>        // For the CKP cancel timer, and for the watchdog
 
 #include <Ethernet.h>
 #include <EEPROM.h>
@@ -27,6 +28,9 @@ IPAddress ip(192, 168, 0, 12);  // This MAC/IP address pair is also set as a sta
 IPAddress broadcast(192, 168, 0, 255);
 EthernetUDP WPudp;
 EthernetClient client;
+
+Timer timer;
+byte panasonicCancelTimer = 0; // Timer for Panasonic CKP timer cancel event
 
 const int WPudpPort = 49722; // The Windows Phone application port, randomly chosen :)
 
@@ -206,19 +210,26 @@ void sendPanasonicCKPraw(byte sendBuffer[])
 //
 // CKP does not have discrete ON/OFF commands, but this can be emulated by using the timer
 // The side-effects of using the timer are:
-// * one minute delay before the power state changes
+// * ONE minute delay before the power state changes
 // * the 'TIMER' led (orange) is lit
+// * a timer event is scheduled to cancel the timer after TWO minutes (the 'TIMER' led turns off
 
-void sendPanasonicCKPOnOff(boolean powerState)
+void sendPanasonicCKPOnOff(boolean powerState, boolean cancelTimer)
 {
-  byte ON_msg[] = { 0x7F, 0x38, 0xBF, 0x38, 0x10, 0x3D, 0x80, 0x3D, 0x09, 0x34, 0x80, 0x34 };  // ON at 00:10,  time now 00:09, no OFF timing
-  byte OFF_msg[] = { 0x10, 0x38, 0x80, 0x38, 0x7F, 0x3D, 0xBF, 0x3D, 0x09, 0x34, 0x80, 0x34 }; // OFF at 00:10, time now 00:09, no ON timing
+  byte ON_msg[] =     { 0x7F, 0x38, 0xBF, 0x38, 0x10, 0x3D, 0x80, 0x3D, 0x09, 0x34, 0x80, 0x34 }; //  ON at 00:10, time now 00:09, no OFF timing
+  byte OFF_msg[] =    { 0x10, 0x38, 0x80, 0x38, 0x7F, 0x3D, 0xBF, 0x3D, 0x09, 0x34, 0x80, 0x34 }; // OFF at 00:10, time now 00:09, no ON timing
+  byte CANCEL_msg[] = { 0x7F, 0x38, 0xBF, 0x38, 0x7F, 0x3D, 0xBF, 0x3D, 0x17, 0x34, 0x80, 0x34 }; // Timer CANCEL
+
   byte *sendBuffer;
 
-  if ( powerState == true ) {
-    sendBuffer = ON_msg;
+  if ( cancelTimer == true ) {
+    sendBuffer = CANCEL_msg;
   } else {
-    sendBuffer = OFF_msg;
+    if ( powerState == true ) {
+      sendBuffer = ON_msg;
+    } else {
+      sendBuffer = OFF_msg;
+    }
   }
 
   // 40 kHz PWM frequency
@@ -245,6 +256,17 @@ void sendPanasonicCKPOnOff(boolean powerState)
   mark(PANASONIC_AIRCON1_BIT_MARK);
   space(0);
 }
+
+
+// Send the Panasonic CKP timer cancel
+
+void sendPanasonicCKPCancelTimer()
+{
+  Serial.println(F("Sending Panasonic CKP timer cancel"));
+
+  sendPanasonicCKPOnOff(false, true);
+}
+
 
 // Send the Panasonic DKE code
 
@@ -474,15 +496,22 @@ void sendCKPCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte
 
   sendPanasonicCKP(operatingMode, fanSpeed, temperature, swingV, swingH);
   delay(1000); // Sleep 1 second between the messages
-  sendPanasonicCKPOnOff(powerMode);
 
-/* TODO
-   * The OnOff uses a timer to turn the pump on or off ONE minute from now
-   * -> this obviously leaves the timer on (the 'timer led' on the indoor unit
-   * -> this also means that the pump will do the same power action every day at the same time
+  // This will change the power state in one minute from now
+  sendPanasonicCKPOnOff(powerMode, false);
 
-   * So: send a timer 'cancel' event TWO minutes from now, unless another command was received meanwhile
-*/
+  // Send the 'timer cancel' signal 2 minutes later
+  if (panasonicCancelTimer != 0)
+  {
+    timer.stop(panasonicCancelTimer);
+    panasonicCancelTimer = 0;
+  }
+
+  // Note that the argument to 'timer.after' has to be explicitly cast into 'long'
+  panasonicCancelTimer = timer.after(2L*60L*1000L, sendPanasonicCKPCancelTimer);
+
+  Serial.print(F("'Timer cancel' timer ID: "));
+  Serial.println(panasonicCancelTimer);
 }
 
 
@@ -755,9 +784,11 @@ void setup()
   // * http://www.ladyada.net/library/arduino/bootloader.html
   // * http://www.grozeaion.com/electronics/arduino/131-atmega328p-burning-bootloader.html
   wdt_enable(WDTO_8S);
+  timer.every(2000, feedWatchdog);
 
   Serial.println(F("Started"));
 }
+
 
 // The loop
 // * heartbeats
@@ -775,8 +806,8 @@ void loop()
   int operatingMode = 2;
   int fanSpeed = 1;
 
-  // If the watchdog is not fed, the Arduino does a reset
-  feedWatchdog();
+  // Process the timers
+  timer.update();
 
   // process incoming xPL packets
   int WPPacketSize = WPudp.parsePacket();
@@ -839,7 +870,6 @@ void loop()
     }
     else if (strcmp(command->valuestring, "command") == 0)
     {
-
       // Is the message intended for us?
       aJsonObject* identity = aJson.getObjectItem(jsonObject, "identity");
 
@@ -950,7 +980,6 @@ void sendWPNotification(char *host, int port, char *path, char *payload, int not
     // Print out the HTTP request response
     Serial.println(F("Response:\n---"));
     while (client.connected()) {
-      feedWatchdog();
       while (client.available()) {
         char c = client.read();
         Serial.print(c);
