@@ -552,7 +552,6 @@ void sendDKECmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte
     temperature = temperatureCmd;
   }
 
-
   switch (swingVCmd)
   {
     case 1:
@@ -601,6 +600,73 @@ void sendDKECmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte
 }
 
 
+// Midea MSR1-12HRN1-QC2 + MOA1-12HN1-QC2 numeric values to command bytes (Ultimate Pro Plus Basic 13FP)
+
+void sendMideaCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte temperatureCmd, byte swingVCmd, byte swingHCmd)
+{
+  // Sensible defaults for the heat pump mode
+
+  byte operatingMode = MIDEA_AIRCON1_MODE_HEAT;
+  byte fanSpeed = MIDEA_AIRCON1_FAN_AUTO;
+  byte temperature = 23;
+
+
+  switch (powerModeCmd)
+  {
+    case 0:
+      // OFF is a special case
+      operatingMode = MIDEA_AIRCON1_MODE_OFF;
+      sendMidea(operatingMode, fanSpeed, temperature);
+      return;
+  }
+
+  switch (operatingModeCmd)
+  {
+    case 1:
+      operatingMode = MIDEA_AIRCON1_MODE_AUTO;
+      break;
+    case 2:
+      operatingMode = MIDEA_AIRCON1_MODE_HEAT;
+      break;
+    case 3:
+      operatingMode = MIDEA_AIRCON1_MODE_COOL;
+      break;
+    case 4:
+      operatingMode = MIDEA_AIRCON1_MODE_DRY;
+      break;
+    case 5:
+      operatingMode = MIDEA_AIRCON1_MODE_FAN;
+      break;
+    case 6:
+      // FP is a special case
+      operatingMode = MIDEA_AIRCON1_MODE_FP;
+      sendMidea(operatingMode, fanSpeed, temperature);
+      return;
+  }
+
+  switch (fanSpeedCmd)
+  {
+    case 1:
+      fanSpeed = MIDEA_AIRCON1_FAN_AUTO;
+      break;
+    case 2:
+      fanSpeed = MIDEA_AIRCON1_FAN1;
+      break;
+    case 3:
+      fanSpeed = MIDEA_AIRCON1_FAN2;
+      break;
+    case 4:
+      fanSpeed = MIDEA_AIRCON1_FAN3;
+      break;
+  }
+
+  if ( temperatureCmd > 15 && temperatureCmd < 31)
+  {
+    temperature = temperatureCmd;
+  }
+
+  sendMidea(operatingMode, fanSpeed, temperature);
+}
 
 
 // Send a byte over IR
@@ -809,7 +875,7 @@ void loop()
         }
         else if (strcmp(model->valuestring, "midea") == 0)
         {
-          //sendMideaCmd(power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
+          sendMideaCmd(power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
         }
       }
     }
