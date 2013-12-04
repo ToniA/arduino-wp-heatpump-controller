@@ -21,6 +21,45 @@ Instructions
 * Place the IR led so that the IR receiver on the indoor unit can see it
 * Use the Windows Phone app to search for heatpump controllers :)
 
+Usage without the Windows Phone application
+===========================================
+
+You can also use this directly by using UDP messages. The software will send a UDP reply to the sender's IP address and port if the 'channel' is not defined.
+
+Examples:
+
+```
+echo '{"command":"identify"}' | socat -v - UDP4:192.168.0.255:49722,broadcast
+
+echo '{"command":"command","fan":4,"identity":"02:26:89:28:25:C5","mode":2,"model":"panasonic_ckp","power":1,"temperature":24}' | socat -v - UDP4:192.168.0.255:49722,broadcast
+```
+
+And here's a piece of Python code:
+
+```
+from socket import *
+sock = socket(AF_INET, SOCK_DGRAM)
+sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
+
+# Ask for the identity
+sock.sendto('{"command":"identify"}', ('255.255.255.255', 49722))
+data, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
+print "message from %s: %s" % (addr, data)
+
+# Send a command to a controller
+sock.sendto('{"command":"command","fan":4,"identity":"02:26:89:28:25:C5","mode":2,"model":"panasonic_ckp","power":1,"temperature":24}', ('255.255.255.255', 49722))
+data, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
+print "message from %s: %s" % (addr, data)
+```
+
+The output is
+
+```
+message from ('192.168.0.12', 49722): {"command":"identify","identity":"02:26:89:28:25:C5"}
+message from ('192.168.0.12', 49722): {"command":"command","fan":4,"identity":"02:26:89:28:25:C5","mode":2,"model":"panasonic_ckp","power":1,"temperature":24}
+```
+   
 Schema
 ------
 

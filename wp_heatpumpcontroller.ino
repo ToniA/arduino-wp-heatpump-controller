@@ -83,6 +83,14 @@ const int WPudpPort = 49722; // The Windows Phone application port, randomly cho
 #define PANASONIC_AIRCON2_ZERO_SPACE 470
 #define PANASONIC_AIRCON2_MSG_SPACE  10000
 
+// Panasonic JKE timing constants
+#define PANASONIC_AIRCON3_HDR_MARK   3450
+#define PANASONIC_AIRCON3_HDR_SPACE  1750
+#define PANASONIC_AIRCON3_BIT_MARK   400
+#define PANASONIC_AIRCON3_ONE_SPACE  1300
+#define PANASONIC_AIRCON3_ZERO_SPACE 430
+#define PANASONIC_AIRCON3_MSG_SPACE  10000
+
 // Panasonic DKE codes
 #define PANASONIC_AIRCON2_MODE_AUTO  0x00 // Operating mode
 #define PANASONIC_AIRCON2_MODE_HEAT  0x40
@@ -797,9 +805,8 @@ void setup()
 void loop()
 {
   char *messageBuff = NULL;
-  char *json;
+  char *json = NULL;
   aJsonObject* jsonObject;
-  aJsonObject* jsonResponseObject;
 
   // Sensible defaults
   int temperature = 23;
@@ -819,6 +826,18 @@ void loop()
 
     Serial.print(F("Received WP packet of size "));
     Serial.println(WPPacketSize);
+    Serial.print(F("From "));
+    IPAddress remote = WPudp.remoteIP();
+    for (int i =0; i < 4; i++)
+    {
+      Serial.print(remote[i], DEC);
+      if (i < 3)
+      {
+        Serial.print(".");
+      }
+    }
+    Serial.print(F(", port "));
+    Serial.println(WPudp.remotePort());
 
     // Allocate space for the message, clear the buffer
     messageBuff = (char*)malloc(WPPacketSize+1);
@@ -835,37 +854,37 @@ void loop()
     Serial.println(F("Parsing JSON"));
     jsonObject = aJson.parse(messageBuff);
 
-    // Free the message buffer
-    free(messageBuff);
-
     // Get the command and push channel
     aJsonObject* command = aJson.getObjectItem(jsonObject, "command");
+    Serial.print(F("Command: "));
     Serial.println(command->valuestring);
 
     aJsonObject* pushurl_channel = aJson.getObjectItem(jsonObject, "channel");
-    Serial.println(pushurl_channel->valuestring);
 
-    // The channel is in form 'host:port:path'
-    // Break it down in place to save precious RAM
-    char *host = pushurl_channel->valuestring;
-    char *port = strchr(host, ':');
-    port[0] = '\0';
-    port++;
-    char *path = strchr(port, ':');
-    path[0] = '\0';
-    path++;
+    if (pushurl_channel != NULL)
+    {
+      Serial.print(F("Pushurl channel: "));
+      Serial.println(pushurl_channel->valuestring);
+    }
 
     if (strcmp(command->valuestring, "identify") == 0)
     {
-     aJson.addItemToObject(jsonObject, "identity", aJson.createItem(macstr));
-
-      // Send a RAW notification back to the Windows Phone
-      Serial.println(F("Sending RAW notification"));
+      aJson.addItemToObject(jsonObject, "identity", aJson.createItem(macstr));
 
       // This allocates memory which must be free'd
       char *json = aJson.print(jsonObject);
 
-      sendWPNotification(host, atoi(port), path, json, 3);
+      if (pushurl_channel != NULL)
+      {
+        // Send a RAW notification back to the Windows Phone, 3 == RAW notification type
+        sendWPNotification(pushurl_channel->valuestring, json, 3);
+      }
+      else
+      {
+        // NO pushurl_channel defined, send a UDP reply to the packet sender
+        sendUDPNotification(messageBuff);
+      }
+
       free(json);
     }
     else if (strcmp(command->valuestring, "command") == 0)
@@ -881,19 +900,16 @@ void loop()
         aJsonObject* fan = aJson.getObjectItem(jsonObject, "fan");
         aJsonObject* temperature = aJson.getObjectItem(jsonObject, "temperature");
 
-        // Send a RAW notification back to the Windows Phone
-        Serial.println(F("Sending RAW notification"));
-
-        // This allocates memory which must be free'd
-        char *json = aJson.print(jsonObject);
-
-        if ( json == NULL )
+        if (pushurl_channel != NULL)
         {
-          Serial.println(F("Out of memory!"));
+          // Send a RAW notification back to the Windows Phone, 3 == RAW notification type
+          sendWPNotification(pushurl_channel->valuestring, messageBuff, 3);
         }
-
-        sendWPNotification(host, atoi(port), path, json, 3);
-        free(json);
+        else
+        {
+          // NO pushurl_channel defined, send a UDP reply to the packet sender
+          sendUDPNotification(messageBuff);
+        }
 
         if (strcmp(model->valuestring, "panasonic_ckp") == 0)
         {
@@ -910,9 +926,11 @@ void loop()
       }
     }
 
+    // Free the message buffer
+    free(messageBuff);
+
     // Free the memory used by the JSON objects
     aJson.deleteItem(jsonObject);
-    aJson.deleteItem(jsonResponseObject);
 
     // Debug: show the amount of free SRAM
     Serial.print(F("Loop end: free RAM: "));
@@ -921,12 +939,39 @@ void loop()
 }
 
 //
+// Send a UDP notification
+//
+
+void sendUDPNotification(char *payload)
+{
+  Serial.print(F("Sending a UDP response: "));
+  Serial.println(payload);
+
+  WPudp.beginPacket(WPudp.remoteIP(), WPudp.remotePort());
+  WPudp.write(payload);
+  WPudp.endPacket();
+}
+
+//
 // Send a Windows Phone notification
 //
 
-void sendWPNotification(char *host, int port, char *path, char *payload, int notificationType)
+void sendWPNotification(char *pushurl_channel, char *payload, int notificationType)
 {
-  if (client.connect(host, port) == true ) {
+  Serial.print(F("Sending a Windows Phone notification: "));
+  Serial.println(payload);
+
+  // The channel is in form 'host:port:path'
+  // Break it down in place to save precious RAM
+  char *host = pushurl_channel;
+  char *port = strchr(host, ':');
+  port[0] = '\0';
+  port++;
+  char *path = strchr(port, ':');
+  path[0] = '\0';
+  path++;
+
+  if (client.connect(host, atoi(port)) == true ) {
         Serial.println(F("Connected to PUSH channel"));
     } else {
         Serial.println(F("Failed to connect to PUSH channel"));
