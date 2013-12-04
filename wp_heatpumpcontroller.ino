@@ -882,7 +882,7 @@ void loop()
       else
       {
         // NO pushurl_channel defined, send a UDP reply to the packet sender
-        sendUDPNotification(messageBuff);
+        sendUDPNotification(json);
       }
 
       free(json);
