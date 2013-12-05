@@ -24,15 +24,21 @@
 byte macAddress[] = { 0x02, 0x26, 0x89, 0x00, 0x00, 0x00 };
 char macstr[18];
 
+// IP address settings
 IPAddress ip(192, 168, 0, 12);  // This MAC/IP address pair is also set as a static lease on the router
 IPAddress broadcast(192, 168, 0, 255);
 EthernetUDP WPudp;
 EthernetClient client;
 
-Timer timer;
-byte panasonicCancelTimer = 0; // Timer for Panasonic CKP timer cancel event
+// Stream for the aJson class
+aJsonStream WPudp_stream(&WPudp);
 
-const int WPudpPort = 49722; // The Windows Phone application port, randomly chosen :)
+// Timer for Panasonic CKP timer cancel event, and for the watchdog
+Timer timer;
+byte panasonicCancelTimer = 0;
+
+// The Windows Phone application port, randomly chosen :)
+const int WPudpPort = 49722;
 
 // Infrared LED on digital PIN 3 (needs a PWM pin)
 // Connect with 1 kOhm resistor in series to GND
@@ -141,6 +147,27 @@ const int WPudpPort = 49722; // The Windows Phone application port, randomly cho
 #define MIDEA_AIRCON1_FAN2           0x05
 #define MIDEA_AIRCON1_FAN3           0x03
 
+// Carrier 42NQV035G / 38NYV035H2 (remote control WH-L05SE) timing constants and codes
+
+#define CARRIER_AIRCON1_HDR_MARK   4320
+#define CARRIER_AIRCON1_HDR_SPACE  4350
+#define CARRIER_AIRCON1_BIT_MARK   500
+#define CARRIER_AIRCON1_ONE_SPACE  1650
+#define CARRIER_AIRCON1_ZERO_SPACE 550
+#define CARRIER_AIRCON1_MSG_SPACE  7400
+
+#define CARRIER_AIRCON1_MODE_AUTO  0x00 // Operating mode
+#define CARRIER_AIRCON1_MODE_HEAT  0xC0
+#define CARRIER_AIRCON1_MODE_COOL  0x80
+#define CARRIER_AIRCON1_MODE_DRY   0x40
+#define CARRIER_AIRCON1_MODE_FAN   0x20
+#define CARRIER_AIRCON1_MODE_OFF   0xE0 // Power OFF
+#define CARRIER_AIRCON1_FAN_AUTO   0x00 // Fan speed
+#define CARRIER_AIRCON1_FAN1       0x02
+#define CARRIER_AIRCON1_FAN2       0x06
+#define CARRIER_AIRCON1_FAN3       0x01
+#define CARRIER_AIRCON1_FAN4       0x05
+#define CARRIER_AIRCON1_FAN5       0x03
 
 // Send the Panasonic CKP code
 
@@ -399,6 +426,68 @@ void sendMidearaw(byte sendBuffer[])
 
   mark(MIDEA_AIRCON1_BIT_MARK);
   space(0);
+}
+
+// Send the Carrier code
+// Carrier has the LSB and MSB in different format than Panasonic
+
+void sendCarrier(byte operatingMode, byte fanSpeed, byte temperature)
+{
+  byte sendBuffer[9] = { 0x4f, 0xb0, 0xc0, 0x3f, 0x80, 0x00, 0x00, 0x00, 0x00 }; // The data is on the last four bytes
+
+  byte temperatures[] = { 0x00, 0x08, 0x04, 0x0c, 0x02, 0x0a, 0x06, 0x0e, 0x01, 0x09, 0x05, 0x0d, 0x03, 0x0b };
+  byte checksum = 0;
+
+  sendBuffer[5] = temperatures[(temperature-17)];
+  sendBuffer[6] = operatingMode | fanSpeed;
+
+  // Checksum
+
+  for (int i=0; i<8; i++) {
+    checksum += Bit_Reverse(sendBuffer[i]);
+  }
+
+  sendBuffer[8] = Bit_Reverse(checksum);
+
+  // 40 kHz PWM frequency
+  enableIROut(40);
+
+  // Header
+  mark(CARRIER_AIRCON1_HDR_MARK);
+  space(CARRIER_AIRCON1_HDR_SPACE);
+
+  // Payload
+  for (int i=0; i<sizeof(sendBuffer); i++) {
+    sendIRByte(sendBuffer[i], CARRIER_AIRCON1_BIT_MARK, CARRIER_AIRCON1_ZERO_SPACE, CARRIER_AIRCON1_ONE_SPACE);
+  }
+
+  // Pause + new header
+  mark(CARRIER_AIRCON1_BIT_MARK);
+  space(CARRIER_AIRCON1_MSG_SPACE);
+
+  mark(CARRIER_AIRCON1_HDR_MARK);
+  space(CARRIER_AIRCON1_HDR_SPACE);
+
+  // Payload again
+  for (int i=0; i<sizeof(sendBuffer); i++) {
+    sendIRByte(sendBuffer[i], CARRIER_AIRCON1_BIT_MARK, CARRIER_AIRCON1_ZERO_SPACE, CARRIER_AIRCON1_ONE_SPACE);
+  }
+
+  // End mark
+  mark(CARRIER_AIRCON1_BIT_MARK);
+  space(0);
+}
+
+// See http://www.nrtm.org/index.php/2013/07/25/reverse-bits-in-a-byte/
+byte Bit_Reverse( byte x )
+{
+  //          01010101  |         10101010
+  x = ((x >> 1) & 0x55) | ((x << 1) & 0xaa);
+  //          00110011  |         11001100
+  x = ((x >> 2) & 0x33) | ((x << 2) & 0xcc);
+  //          00001111  |         11110000
+  x = ((x >> 4) & 0x0f) | ((x << 4) & 0xf0);
+  return x;
 }
 
 // Panasonic CKP numeric values to command bytes
@@ -706,6 +795,73 @@ void sendMideaCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, by
 }
 
 
+// Carrier 42NQV035G / 38NYV035H2 (remote control WH-L05SE) numeric values to command bytes
+
+void sendCarrierCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte temperatureCmd, byte swingVCmd, byte swingHCmd)
+{
+  // Sensible defaults for the heat pump mode
+
+  byte operatingMode = CARRIER_AIRCON1_MODE_HEAT;
+  byte fanSpeed = CARRIER_AIRCON1_FAN_AUTO;
+  byte temperature = 23;
+
+  if (powerModeCmd == 0)
+  {
+    operatingMode = CARRIER_AIRCON1_MODE_OFF;
+  }
+  else
+  {
+    switch (operatingModeCmd)
+    {
+      case 1:
+        operatingMode = CARRIER_AIRCON1_MODE_AUTO;
+        break;
+      case 2:
+        operatingMode = CARRIER_AIRCON1_MODE_HEAT;
+        break;
+      case 3:
+        operatingMode = CARRIER_AIRCON1_MODE_COOL;
+        break;
+      case 4:
+        operatingMode = CARRIER_AIRCON1_MODE_DRY;
+        break;
+      case 5:
+        operatingMode = CARRIER_AIRCON1_MODE_FAN;
+        break;
+    }
+  }
+
+  switch (fanSpeedCmd)
+  {
+    case 1:
+      fanSpeed = CARRIER_AIRCON1_FAN_AUTO;
+      break;
+    case 2:
+      fanSpeed = CARRIER_AIRCON1_FAN1;
+      break;
+    case 3:
+      fanSpeed = CARRIER_AIRCON1_FAN2;
+      break;
+    case 4:
+      fanSpeed = CARRIER_AIRCON1_FAN3;
+      break;
+    case 5:
+      fanSpeed = CARRIER_AIRCON1_FAN4;
+      break;
+    case 6:
+      fanSpeed = CARRIER_AIRCON1_FAN5;
+      break;
+  }
+
+  if ( temperatureCmd > 16 && temperatureCmd < 31)
+  {
+    temperature = temperatureCmd;
+  }
+
+  sendCarrier(operatingMode, fanSpeed, temperature);
+}
+
+
 // Send a byte over IR
 
 void sendIRByte(byte sendByte, int bitMarkLength, int zeroSpaceLength, int oneSpaceLength)
@@ -804,8 +960,6 @@ void setup()
 
 void loop()
 {
-  char *messageBuff = NULL;
-  char *json = NULL;
   aJsonObject* jsonObject;
 
   // Sensible defaults
@@ -813,10 +967,14 @@ void loop()
   int operatingMode = 2;
   int fanSpeed = 1;
 
+  // The JSON response
+  char response[54];
+  char *responseFmt = PSTR("{\"command\":\"%s\",\"identity\":\"%s\"}");
+
   // Process the timers
   timer.update();
 
-  // process incoming xPL packets
+  // process incoming UDP packets
   int WPPacketSize = WPudp.parsePacket();
   if (WPPacketSize)
   {
@@ -824,7 +982,7 @@ void loop()
     Serial.print(F("Loop start: free RAM: "));
     Serial.println(freeRam());
 
-    Serial.print(F("Received WP packet of size "));
+    Serial.print(F("Received UDP packet of size "));
     Serial.println(WPPacketSize);
     Serial.print(F("From "));
     IPAddress remote = WPudp.remoteIP();
@@ -839,20 +997,9 @@ void loop()
     Serial.print(F(", port "));
     Serial.println(WPudp.remotePort());
 
-    // Allocate space for the message, clear the buffer
-    messageBuff = (char*)malloc(WPPacketSize+1);
-    memset(messageBuff, 0, WPPacketSize+1);
-
-    // Read the packet into packetBuffer
-    WPudp.read(messageBuff, WPPacketSize);
-
-    // Debug message content
-    Serial.println(F("Contents:"));
-    Serial.println(messageBuff);
-
     // Parse JSON
     Serial.println(F("Parsing JSON"));
-    jsonObject = aJson.parse(messageBuff);
+    jsonObject = aJson.parse(&WPudp_stream);
 
     // Get the command and push channel
     aJsonObject* command = aJson.getObjectItem(jsonObject, "command");
@@ -867,27 +1014,13 @@ void loop()
       Serial.println(pushurl_channel->valuestring);
     }
 
-    if (strcmp(command->valuestring, "identify") == 0)
+    if (strcmp_P(command->valuestring, PSTR("identify")) == 0)
     {
-      aJson.addItemToObject(jsonObject, "identity", aJson.createItem(macstr));
-
-      // This allocates memory which must be free'd
-      char *json = aJson.print(jsonObject);
-
-      if (pushurl_channel != NULL)
-      {
-        // Send a RAW notification back to the Windows Phone, 3 == RAW notification type
-        sendWPNotification(pushurl_channel->valuestring, json, 3);
-      }
-      else
-      {
-        // NO pushurl_channel defined, send a UDP reply to the packet sender
-        sendUDPNotification(json);
-      }
-
-      free(json);
+      // Create the response JSON just by printing it - this consumes less memory than using the aJson
+      snprintf_P(response, sizeof(response), responseFmt, command->valuestring, macstr);
+      sendNotification(pushurl_channel, response, 3);
     }
-    else if (strcmp(command->valuestring, "command") == 0)
+    else if (strcmp_P(command->valuestring, PSTR("command")) == 0)
     {
       // Is the message intended for us?
       aJsonObject* identity = aJson.getObjectItem(jsonObject, "identity");
@@ -900,81 +1033,78 @@ void loop()
         aJsonObject* fan = aJson.getObjectItem(jsonObject, "fan");
         aJsonObject* temperature = aJson.getObjectItem(jsonObject, "temperature");
 
-        if (pushurl_channel != NULL)
-        {
-          // Send a RAW notification back to the Windows Phone, 3 == RAW notification type
-          sendWPNotification(pushurl_channel->valuestring, messageBuff, 3);
-        }
-        else
-        {
-          // NO pushurl_channel defined, send a UDP reply to the packet sender
-          sendUDPNotification(messageBuff);
-        }
+        // Create the response JSON just by printing it - this consumes less memory than using the aJson
+        snprintf_P(response, sizeof(response), responseFmt, command->valuestring, macstr);
+        sendNotification(pushurl_channel, response, 3);
 
-        if (strcmp(model->valuestring, "panasonic_ckp") == 0)
+        if (strcmp_P(model->valuestring, PSTR("panasonic_ckp")) == 0)
         {
           sendCKPCmd(power->valueint, mode->valueint, fan->valueint, temperature->valueint, 2, 1);
         }
-        else if (strcmp(model->valuestring, "panasonic_dke") == 0)
+        else if (strcmp_P(model->valuestring, PSTR("panasonic_dke")) == 0)
         {
           sendDKECmd(power->valueint, mode->valueint, fan->valueint, temperature->valueint, 2, 1);
         }
-        else if (strcmp(model->valuestring, "midea") == 0)
+        else if (strcmp_P(model->valuestring, PSTR("midea")) == 0)
         {
           sendMideaCmd(power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
         }
+        else if (strcmp_P(model->valuestring, PSTR("carrier")) == 0)
+        {
+          sendCarrierCmd(power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
+        }
+        else {
+         Serial.print(F("got nothing: "));
+         Serial.println(model->valuestring);
+        }
+
       }
     }
-
-    // Free the message buffer
-    free(messageBuff);
 
     // Free the memory used by the JSON objects
     aJson.deleteItem(jsonObject);
 
-    // Debug: show the amount of free SRAM
+    // Debug: show the amount of free SRAM - this should be the same all the time, or there's a memory leak
     Serial.print(F("Loop end: free RAM: "));
     Serial.println(freeRam());
   }
 }
 
 //
-// Send a UDP notification
+// Send a notification, either through UDP or through Windows Phone push notification service
 //
 
-void sendUDPNotification(char *payload)
+void sendNotification(aJsonObject *pushurl_channel, char *payload, int notificationType)
 {
-  Serial.print(F("Sending a UDP response: "));
-  Serial.println(payload);
+  if (pushurl_channel == NULL)
+  {
+    Serial.print(F("Sending a UDP response: "));
+    Serial.println(payload);
 
-  WPudp.beginPacket(WPudp.remoteIP(), WPudp.remotePort());
-  WPudp.write(payload);
-  WPudp.endPacket();
-}
+    WPudp.beginPacket(WPudp.remoteIP(), WPudp.remotePort());
+    WPudp.write(payload);
+    WPudp.endPacket();
+  }
+  else
+  {
+    Serial.print(F("Sending a Windows Phone notification: "));
+    Serial.println(payload);
 
-//
-// Send a Windows Phone notification
-//
+    // The channel is in form 'host:port:path'
+    // Break it down in place to save precious RAM
+    char *host = pushurl_channel->valuestring;
+    char *port = strchr(host, ':');
+    port[0] = '\0';
+    port++;
+    char *path = strchr(port, ':');
+    path[0] = '\0';
+    path++;
 
-void sendWPNotification(char *pushurl_channel, char *payload, int notificationType)
-{
-  Serial.print(F("Sending a Windows Phone notification: "));
-  Serial.println(payload);
-
-  // The channel is in form 'host:port:path'
-  // Break it down in place to save precious RAM
-  char *host = pushurl_channel;
-  char *port = strchr(host, ':');
-  port[0] = '\0';
-  port++;
-  char *path = strchr(port, ':');
-  path[0] = '\0';
-  path++;
-
-  if (client.connect(host, atoi(port)) == true ) {
-        Serial.println(F("Connected to PUSH channel"));
+    if (client.connect(host, atoi(port)) == true ) {
+      Serial.println(F("Connected to PUSH channel"));
     } else {
-        Serial.println(F("Failed to connect to PUSH channel"));
+      Serial.println(F("Failed to connect to PUSH channel"));
+      return;
     }
 
     // Debug: show the amount of free SRAM
@@ -1032,8 +1162,11 @@ void sendWPNotification(char *pushurl_channel, char *payload, int notificationTy
     }
 
     client.stop();
+
     Serial.println(F("---\ndisconnected"));
+  }
 }
+
 
 // Random MAC based on:
 // http://files.pcode.nl/arduino/EthernetPersistentMAC.ino

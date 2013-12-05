@@ -5,12 +5,13 @@ Control a Panasonic or Midea heat pump/split unit air conditioner with Arduino u
 Currently supports at least these models 
 * Panasonic E9/E12-CKP and E9/E12-DKE (Panasonic remote control P/N A75C2295 and P/N A75C2616)
 * Midea MSR1-12HRN1-QC2 + MOA1-12HN1-QC2, sold as Ultimate Pro Plus Basic 13FP in Finland (Midea remote control P/N RG51M1/E)
+* Carrier 42NQV035G / 38NYV035H2 (Carrier remote control P/N WH-L05SE)
 
 For the Windows Phone 8 application source, see my other repository
 https://github.com/ToniA/wp8-heatpumpcontrol
 
 Instructions
-============
+------------
 * Compile the software, and program your Arduino
     * Note that the default IP address is 192.168.0.12 (DHCP is not used)
 	* Adjust that, as well as the broadcast address as needed
@@ -22,7 +23,7 @@ Instructions
 * Use the Windows Phone app to search for heatpump controllers :)
 
 Usage without the Windows Phone application
-===========================================
+-------------------------------------------
 
 You can also use this directly by using UDP messages. The software will send a UDP reply to the sender's IP address and port if the 'channel' is not defined.
 
