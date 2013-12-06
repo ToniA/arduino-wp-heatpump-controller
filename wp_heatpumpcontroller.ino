@@ -526,6 +526,7 @@ void sendCKPCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte
       break;
     case 5:
       operatingMode |= PANASONIC_AIRCON1_MODE_FAN;
+      temperatureCmd = 27; // Temperature is always 27 in FAN mode
       break;
     default:
       operatingMode |= PANASONIC_AIRCON1_MODE_HEAT;
@@ -647,7 +648,7 @@ void sendDKECmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte
       break;
     case 5:
       operatingMode |= PANASONIC_AIRCON2_MODE_FAN;
-      temperature = 27; // Temperature is always 27 in FAN mode
+      temperatureCmd = 27; // Temperature is always 27 in FAN mode
       break;
   }
 
@@ -827,6 +828,7 @@ void sendCarrierCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, 
         break;
       case 5:
         operatingMode = CARRIER_AIRCON1_MODE_FAN;
+        temperatureCmd = 22; // Temperature is always 22 on FAN mode
         break;
     }
   }
