@@ -81,7 +81,7 @@ const int WPudpPort = 49722;
 #define PANASONIC_AIRCON1_HS_AUTO    0x08 // Horizontal swing
 #define PANASONIC_AIRCON1_HS_MANUAL  0x00
 
-// Panasonic DKE timing constants
+// Panasonic DKE, JKE & NKE timing constants
 #define PANASONIC_AIRCON2_HDR_MARK   3500
 #define PANASONIC_AIRCON2_HDR_SPACE  1800
 #define PANASONIC_AIRCON2_BIT_MARK   420
@@ -89,15 +89,7 @@ const int WPudpPort = 49722;
 #define PANASONIC_AIRCON2_ZERO_SPACE 470
 #define PANASONIC_AIRCON2_MSG_SPACE  10000
 
-// Panasonic JKE timing constants
-#define PANASONIC_AIRCON3_HDR_MARK   3450
-#define PANASONIC_AIRCON3_HDR_SPACE  1750
-#define PANASONIC_AIRCON3_BIT_MARK   400
-#define PANASONIC_AIRCON3_ONE_SPACE  1300
-#define PANASONIC_AIRCON3_ZERO_SPACE 430
-#define PANASONIC_AIRCON3_MSG_SPACE  10000
-
-// Panasonic DKE codes
+// Panasonic DKE, JNE & NKE codes
 #define PANASONIC_AIRCON2_MODE_AUTO  0x00 // Operating mode
 #define PANASONIC_AIRCON2_MODE_HEAT  0x40
 #define PANASONIC_AIRCON2_MODE_COOL  0x30
@@ -124,6 +116,10 @@ const int WPudpPort = 49722;
 #define PANASONIC_AIRCON2_HS_MLEFT   0x0A
 #define PANASONIC_AIRCON2_HS_MRIGHT  0x0B
 #define PANASONIC_AIRCON2_HS_RIGHT   0x0C
+
+#define PANASONIC_DKE 0
+#define PANASONIC_JKE 1
+#define PANASONIC_NKE 2
 
 // Midea timing constants
 #define MIDEA_AIRCON1_HDR_MARK       4350
@@ -168,6 +164,24 @@ const int WPudpPort = 49722;
 #define CARRIER_AIRCON1_FAN3       0x01
 #define CARRIER_AIRCON1_FAN4       0x05
 #define CARRIER_AIRCON1_FAN5       0x03
+
+// JSON data about supported pumps
+// * name
+// * displayName
+// * numberOfModes
+// * minTemperature
+// * maxTemperature
+// * numberOfFanSpeeds
+// * maintenance modes
+
+prog_char heatpumpModelData[] PROGMEM = {"\"heatpumpmodels\":["
+"{\"model\":\"panasonic_ckp\",\"displayName\":\"Panasonic CKP\",\"numberOfModes\":5,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":6},"
+"{\"model\":\"panasonic_dke\",\"displayName\":\"Panasonic DKE\",\"numberOfModes\":5,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":6},"
+"{\"model\":\"panasonic_jke\",\"displayName\":\"Panasonic JKE\",\"numberOfModes\":5,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":6},"
+"{\"model\":\"panasonic_nke\",\"displayName\":\"Panasonic NKE\",\"numberOfModes\":6,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":6,\"maintenance\":[8,10]},"
+"{\"model\":\"carrier\",\"displayName\":\"Carrier\",\"numberOfModes\":5,\"minTemperature\":17,\"maxTemperature\":30,\"numberOfFanSpeeds\":6},"
+"{\"model\":\"midea\",\"displayName\":\"Ultimate Pro Plus 13FP\",\"numberOfModes\":6,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":4,\"maintenance\":[10]}"
+"]"};
 
 // Send the Panasonic CKP code
 
@@ -303,25 +317,36 @@ void sendPanasonicCKPCancelTimer()
 }
 
 
-// Send the Panasonic DKE code
+// Send the Panasonic DKE/JKE/NKE code
 
-void sendPanasonicDKE(byte operatingMode, byte fanSpeed, byte temperature, byte swingV, byte swingH)
+void sendPanasonic(byte model, byte operatingMode, byte fanSpeed, byte temperature, byte swingV, byte swingH)
 {
-  byte DKE_template[] = { 0x02, 0x20, 0xE0, 0x04, 0x00, 0x00, 0x00, 0x06, 0x02, 0x20, 0xE0, 0x04, 0x00, 0x48, 0x2E, 0x80, 0xA3, 0x0D, 0x00, 0x0E, 0xE0, 0x00, 0x00, 0x01, 0x00, 0x06, 0xA2 };
+  // Only bytes 13, 14, 16, 17 and 26 are modified, DKE and JKE seem to share the same template?
+  byte panasonicTemplate[][27] = {
+    // DKE, model 0
+    { 0x02, 0x20, 0xE0, 0x04, 0x00, 0x00, 0x00, 0x06, 0x02, 0x20, 0xE0, 0x04, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x0E, 0xE0, 0x00, 0x00, 0x01, 0x00, 0x06, 0x00 },
+    // JKE, model 1
+    { 0x02, 0x20, 0xE0, 0x04, 0x00, 0x00, 0x00, 0x06, 0x02, 0x20, 0xE0, 0x04, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x0E, 0xE0, 0x00, 0x00, 0x81, 0x00, 0x00, 0x00 },
+    // NKE, model 2
+    { 0x02, 0x20, 0xE0, 0x04, 0x00, 0x00, 0x00, 0x06, 0x02, 0x20, 0xE0, 0x04, 0x00, 0x00, 0x00, 0x80, 0x00, 0x06, 0x00, 0x0E, 0xE0, 0x00, 0x00, 0x81, 0x00, 0x00, 0x00 }
+    //   0     1     2     3     4     5     6     7     8     9    10    11    12    13    14   15     16    17    18    19    20    21    22    23    24    25    26
+  };
+
+
+  panasonicTemplate[model][13] = operatingMode;
+  panasonicTemplate[model][14] = temperature << 1;
+  panasonicTemplate[model][16] = fanSpeed | swingV;
+  panasonicTemplate[model][17] = swingH;
+
+  // Checksum calculation
+
   byte checksum = 0xF4;
 
-  DKE_template[13] = operatingMode;
-  DKE_template[14] = temperature << 1;
-  DKE_template[16] = fanSpeed | swingV;
-  DKE_template[17] = swingH;
-
-  // Checksum
-
   for (int i=0; i<26; i++) {
-    checksum += DKE_template[i];
+    checksum += panasonicTemplate[model][i];
   }
 
-  DKE_template[26] = checksum;
+  panasonicTemplate[model][26] = checksum;
 
   // 40 kHz PWM frequency
   enableIROut(40);
@@ -332,7 +357,7 @@ void sendPanasonicDKE(byte operatingMode, byte fanSpeed, byte temperature, byte 
 
   // First 8 bytes
   for (int i=0; i<8; i++) {
-    sendIRByte(DKE_template[i], PANASONIC_AIRCON2_BIT_MARK, PANASONIC_AIRCON2_ZERO_SPACE, PANASONIC_AIRCON2_ONE_SPACE);
+    sendIRByte(panasonicTemplate[model][i], PANASONIC_AIRCON2_BIT_MARK, PANASONIC_AIRCON2_ZERO_SPACE, PANASONIC_AIRCON2_ONE_SPACE);
   }
 
   // Pause
@@ -345,12 +370,13 @@ void sendPanasonicDKE(byte operatingMode, byte fanSpeed, byte temperature, byte 
 
   // Last 19 bytes
   for (int i=8; i<27; i++) {
-    sendIRByte(DKE_template[i], PANASONIC_AIRCON2_BIT_MARK, PANASONIC_AIRCON2_ZERO_SPACE, PANASONIC_AIRCON2_ONE_SPACE);
+    sendIRByte(panasonicTemplate[model][i], PANASONIC_AIRCON2_BIT_MARK, PANASONIC_AIRCON2_ZERO_SPACE, PANASONIC_AIRCON2_ONE_SPACE);
   }
 
   mark(PANASONIC_AIRCON2_BIT_MARK);
   space(0);
 }
+
 
 // Send the Midea code
 
@@ -615,7 +641,7 @@ void sendCKPCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte
 
 // Panasonic DKE numeric values to command bytes
 
-void sendDKECmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte temperatureCmd, byte swingVCmd, byte swingHCmd)
+void sendPanasonicCmd(byte model, byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte temperatureCmd, byte swingVCmd, byte swingHCmd)
 {
   // Sensible defaults for the heat pump mode
 
@@ -723,7 +749,17 @@ void sendDKECmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte
       break;
   }
 
-  sendPanasonicDKE(operatingMode, fanSpeed, temperature, swingV, swingH);
+  // NKE has +8 / + 10 maintenance heating, which also means MAX fanspeed
+  if ( model == PANASONIC_NKE )
+  {
+    if ( temperatureCmd == 8 || temperatureCmd == 10 )
+    {
+      temperature = temperatureCmd;
+      fanSpeed = PANASONIC_AIRCON2_FAN5;
+    }
+  }
+
+  sendPanasonic(model, operatingMode, fanSpeed, temperature, swingV, swingH);
 }
 
 
@@ -971,7 +1007,7 @@ void loop()
 
   // The JSON response
   char response[54];
-  char *responseFmt = PSTR("{\"command\":\"%s\",\"identity\":\"%s\"}");
+  char *responseFmt = PSTR("{\"command\":\"%s\",\"identity\":\"%s\"");
 
   // Process the timers
   timer.update();
@@ -1020,7 +1056,7 @@ void loop()
     {
       // Create the response JSON just by printing it - this consumes less memory than using the aJson
       snprintf_P(response, sizeof(response), responseFmt, command->valuestring, macstr);
-      sendNotification(pushurl_channel, response, 3);
+      sendNotification(pushurl_channel, response, heatpumpModelData, 3);
     }
     else if (strcmp_P(command->valuestring, PSTR("command")) == 0)
     {
@@ -1037,7 +1073,7 @@ void loop()
 
         // Create the response JSON just by printing it - this consumes less memory than using the aJson
         snprintf_P(response, sizeof(response), responseFmt, command->valuestring, macstr);
-        sendNotification(pushurl_channel, response, 3);
+        sendNotification(pushurl_channel, response, NULL, 3);
 
         if (strcmp_P(model->valuestring, PSTR("panasonic_ckp")) == 0)
         {
@@ -1045,7 +1081,15 @@ void loop()
         }
         else if (strcmp_P(model->valuestring, PSTR("panasonic_dke")) == 0)
         {
-          sendDKECmd(power->valueint, mode->valueint, fan->valueint, temperature->valueint, 2, 1);
+          sendPanasonicCmd(PANASONIC_DKE, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 2, 1);
+        }
+        else if (strcmp_P(model->valuestring, PSTR("panasonic_jke")) == 0)
+        {
+          sendPanasonicCmd(PANASONIC_JKE, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 2, 1);
+        }
+        else if (strcmp_P(model->valuestring, PSTR("panasonic_nke")) == 0)
+        {
+          sendPanasonicCmd(PANASONIC_NKE, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 2, 1);
         }
         else if (strcmp_P(model->valuestring, PSTR("midea")) == 0)
         {
@@ -1059,7 +1103,6 @@ void loop()
          Serial.print(F("got nothing: "));
          Serial.println(model->valuestring);
         }
-
       }
     }
 
@@ -1076,21 +1119,37 @@ void loop()
 // Send a notification, either through UDP or through Windows Phone push notification service
 //
 
-void sendNotification(aJsonObject *pushurl_channel, char *payload, int notificationType)
+void sendNotification(aJsonObject *pushurl_channel, char *payload1, const prog_char *payload2, int notificationType)
 {
   if (pushurl_channel == NULL)
   {
     Serial.print(F("Sending a UDP response: "));
-    Serial.println(payload);
+    Serial.println(payload1);
 
     WPudp.beginPacket(WPudp.remoteIP(), WPudp.remotePort());
-    WPudp.write(payload);
+
+    // The actual payload
+    WPudp.write(payload1);
+
+    // The extra payload from PROGMEM
+    if (payload2 != NULL)
+    {
+      WPudp.write(",");
+
+      byte character;
+      while ( (character = pgm_read_byte(payload2++)) != 0)
+      {
+        WPudp.write(character);
+      }
+    }
+
+    WPudp.write("}"); // payload1 does not end with '}'
     WPudp.endPacket();
   }
   else
   {
     Serial.print(F("Sending a Windows Phone notification: "));
-    Serial.println(payload);
+    Serial.println(payload1);
 
     // The channel is in form 'host:port:path'
     // Break it down in place to save precious RAM
@@ -1146,13 +1205,32 @@ void sendNotification(aJsonObject *pushurl_channel, char *payload, int notificat
         break;
     }
     client.print(F("Content-Length: "));
-    client.print(strlen(payload));
+    if (payload2 == NULL) {
+      client.print(strlen(payload1) + 1);
+    } else {
+     client.print(strlen(payload1) + strlen_P(payload2) + 2);
+    }
     client.print("\r\n\r\n");
 
     // The actual payload
-    client.print(payload);
+    client.print(payload1);
+
+    // The extra payload from PROGMEM
+    if (payload2 != NULL)
+    {
+      client.print(",");
+
+      byte character;
+      while ( (character = pgm_read_byte(payload2++)) != 0)
+      {
+        client.write(character);
+      }
+    }
+
+    client.print("}"); // payload1 does not end with '}'
+
     Serial.println(F("Payload sent:\n---"));
-    Serial.println(payload);
+    Serial.println(payload1);
 
     // Print out the HTTP request response
     Serial.println(F("Response:\n---"));

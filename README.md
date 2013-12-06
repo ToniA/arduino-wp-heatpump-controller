@@ -4,6 +4,7 @@ arduino-wp-heatpump-controller
 Control a Panasonic, Midea or Carrier heat pump/split unit air conditioner with Arduino using a Windows Phone 8 application
 Currently supports at least these models 
 * Panasonic E9/E12-CKP and E9/E12-DKE (Panasonic remote control P/N A75C2295 and P/N A75C2616)
+* Panasonic E9/E12-NKE and E9/E12-JKE
 * Midea MSR1-12HRN1-QC2 + MOA1-12HN1-QC2, sold as Ultimate Pro Plus Basic 13FP in Finland (Midea remote control P/N RG51M1/E)
 * Carrier 42NQV035G / 38NYV035H2 (Carrier remote control P/N WH-L05SE)
 
