@@ -336,7 +336,11 @@ void sendPanasonic(byte model, byte operatingMode, byte fanSpeed, byte temperatu
   panasonicTemplate[model][13] = operatingMode;
   panasonicTemplate[model][14] = temperature << 1;
   panasonicTemplate[model][16] = fanSpeed | swingV;
-  panasonicTemplate[model][17] = swingH;
+
+  // Only the DKE model has a setting for the horizontal air flow
+  if ( model == PANASONIC_DKE) {
+    panasonicTemplate[model][17] = swingH;
+  }
 
   // Checksum calculation
 
