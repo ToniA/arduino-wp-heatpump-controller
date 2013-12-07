@@ -165,6 +165,26 @@ const int WPudpPort = 49722;
 #define CARRIER_AIRCON1_FAN4       0x05
 #define CARRIER_AIRCON1_FAN5       0x03
 
+// Fujitsu Nocria (AWYZ14) IR protocol, remote control P/N AR-PZ2
+#define FUJITSU_AIRCON1_HDR_MARK    3250
+#define FUJITSU_AIRCON1_HDR_SPACE   1550
+#define FUJITSU_AIRCON1_BIT_MARK    400
+#define FUJITSU_AIRCON1_ONE_SPACE   1200
+#define FUJITSU_AIRCON1_ZERO_SPACE  390
+
+#define FUJITSU_AIRCON1_MODE_AUTO  0x00 // Operating mode
+#define FUJITSU_AIRCON1_MODE_HEAT  0x04
+#define FUJITSU_AIRCON1_MODE_COOL  0x01
+#define FUJITSU_AIRCON1_MODE_DRY   0x02
+#define FUJITSU_AIRCON1_MODE_FAN   0x03
+#define FUJITSU_AIRCON1_MODE_OFF   0xFF // Power OFF - not real codes, but we need something...
+#define FUJITSU_AIRCON1_FAN_AUTO   0x00 // Fan speed
+#define FUJITSU_AIRCON1_FAN1       0x04
+#define FUJITSU_AIRCON1_FAN2       0x03
+#define FUJITSU_AIRCON1_FAN3       0x02
+#define FUJITSU_AIRCON1_FAN4       0x01
+
+
 // JSON data about supported pumps
 // * name
 // * displayName
@@ -180,7 +200,8 @@ prog_char heatpumpModelData[] PROGMEM = {"\"heatpumpmodels\":["
 "{\"model\":\"panasonic_jke\",\"displayName\":\"Panasonic JKE\",\"numberOfModes\":5,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":6},"
 "{\"model\":\"panasonic_nke\",\"displayName\":\"Panasonic NKE\",\"numberOfModes\":6,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":6,\"maintenance\":[8,10]},"
 "{\"model\":\"carrier\",\"displayName\":\"Carrier\",\"numberOfModes\":5,\"minTemperature\":17,\"maxTemperature\":30,\"numberOfFanSpeeds\":6},"
-"{\"model\":\"midea\",\"displayName\":\"Ultimate Pro Plus 13FP\",\"numberOfModes\":6,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":4,\"maintenance\":[10]}"
+"{\"model\":\"midea\",\"displayName\":\"Ultimate Pro Plus 13FP\",\"numberOfModes\":6,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":4,\"maintenance\":[10]},"
+"{\"model\":\"fujitsu_awyz\",\"displayName\":\"Fujitsu AWYZ\",\"numberOfModes\":5,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":5}"
 "]"};
 
 // Send the Panasonic CKP code
@@ -519,6 +540,59 @@ byte Bit_Reverse( byte x )
   x = ((x >> 4) & 0x0f) | ((x << 4) & 0xf0);
   return x;
 }
+
+
+// Send the Fujitsu code
+
+void sendFujitsu(byte operatingMode, byte fanSpeed, byte temperature)
+{
+  // ON, HEAT, AUTO FAN, +24 degrees
+  byte FujitsuTemplate[] = { 0x14, 0x63, 0x00, 0x10, 0x10, 0xFE, 0x09, 0x30, 0x80, 0x04, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00 };
+  //                            0     1     2     3     4     5     6     7     8     9    10    11    12    13    14    15
+
+  byte OFF_msg[] =         { 0x14, 0x63, 0x00, 0x10, 0x10, 0x02, 0xFD };
+  byte checksum = 0x00;
+
+  // Set the operatingmode on the template message
+  FujitsuTemplate[9] = operatingMode;
+
+  // Set the temperature on the template message
+  FujitsuTemplate[8] = (temperature - 16) << 4;
+
+  // Set the operatingmode on the template message
+  FujitsuTemplate[10] = fanSpeed;
+
+  // Calculate the checksum
+  for (int i=0; i<15; i++) {
+    checksum += FujitsuTemplate[i];
+  }
+
+  FujitsuTemplate[15] = (byte)(0x9E - checksum);
+
+  // 40 kHz PWM frequency
+  enableIROut(40);
+
+  // Header
+  mark(FUJITSU_AIRCON1_HDR_MARK);
+  space(FUJITSU_AIRCON1_HDR_SPACE);
+
+  if (operatingMode == FUJITSU_AIRCON1_MODE_OFF) {
+    // OFF
+    for (int i=0; i<sizeof(OFF_msg); i++) {
+      sendIRByte(OFF_msg[i], FUJITSU_AIRCON1_BIT_MARK, FUJITSU_AIRCON1_ZERO_SPACE, FUJITSU_AIRCON1_ONE_SPACE);
+    }
+  } else {
+    // Data
+    for (int i=0; i<sizeof(FujitsuTemplate); i++) {
+      sendIRByte(FujitsuTemplate[i], FUJITSU_AIRCON1_BIT_MARK, FUJITSU_AIRCON1_ZERO_SPACE, FUJITSU_AIRCON1_ONE_SPACE);
+    }
+  }
+
+  // End mark
+  mark(FUJITSU_AIRCON1_BIT_MARK);
+  space(0);
+}
+
 
 // Panasonic CKP numeric values to command bytes
 
@@ -904,6 +978,71 @@ void sendCarrierCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, 
 }
 
 
+// Fujitsu Nocria (AWYZ) (remote control P/N AR-PZ2) numeric values to command bytes
+
+void sendFujitsuCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte temperatureCmd, byte swingVCmd, byte swingHCmd)
+{
+  // Sensible defaults for the heat pump mode
+
+  byte operatingMode = FUJITSU_AIRCON1_MODE_HEAT;
+  byte fanSpeed = FUJITSU_AIRCON1_FAN_AUTO;
+  byte temperature = 23;
+
+  if (powerModeCmd == 0)
+  {
+    operatingMode = FUJITSU_AIRCON1_MODE_OFF;
+  }
+  else
+  {
+    switch (operatingModeCmd)
+    {
+      case 1:
+        operatingMode = FUJITSU_AIRCON1_MODE_AUTO;
+        break;
+      case 2:
+        operatingMode = FUJITSU_AIRCON1_MODE_HEAT;
+        break;
+      case 3:
+        operatingMode = FUJITSU_AIRCON1_MODE_COOL;
+        break;
+      case 4:
+        operatingMode = FUJITSU_AIRCON1_MODE_DRY;
+        break;
+      case 5:
+        operatingMode = FUJITSU_AIRCON1_MODE_FAN;
+        // When Fujitsu goes to FAN mode, it sets the low bit of the byte with the temperature. What is the meaning of that?
+       break;
+    }
+  }
+
+  switch (fanSpeedCmd)
+  {
+    case 1:
+      fanSpeed = FUJITSU_AIRCON1_FAN_AUTO;
+      break;
+    case 2:
+      fanSpeed = FUJITSU_AIRCON1_FAN1;
+      break;
+    case 3:
+      fanSpeed = FUJITSU_AIRCON1_FAN2;
+      break;
+    case 4:
+      fanSpeed = FUJITSU_AIRCON1_FAN3;
+      break;
+    case 5:
+      fanSpeed = FUJITSU_AIRCON1_FAN4;
+      break;
+  }
+
+  if ( temperatureCmd > 15 && temperatureCmd < 31)
+  {
+    temperature = temperatureCmd;
+  }
+
+  sendFujitsu(operatingMode, fanSpeed, temperature);
+}
+
+
 // Send a byte over IR
 
 void sendIRByte(byte sendByte, int bitMarkLength, int zeroSpaceLength, int oneSpaceLength)
@@ -1102,6 +1241,10 @@ void loop()
         else if (strcmp_P(model->valuestring, PSTR("carrier")) == 0)
         {
           sendCarrierCmd(power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
+        }
+        else if (strcmp_P(model->valuestring, PSTR("fujitsu_awyz")) == 0)
+        {
+          sendFujitsuCmd(power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
         }
         else {
          Serial.print(F("got nothing: "));
