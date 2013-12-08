@@ -176,6 +176,26 @@ const int WPudpPort = 49722;
 #define FUJITSU_AIRCON1_FAN3       0x02
 #define FUJITSU_AIRCON1_FAN4       0x01
 
+// Mitsubishi MSZ FD-25 protocol
+
+#define MITSUBISHI_AIRCON1_HDR_MARK   3500
+#define MITSUBISHI_AIRCON1_HDR_SPACE  1850
+#define MITSUBISHI_AIRCON1_BIT_MARK   550
+#define MITSUBISHI_AIRCON1_ONE_SPACE  1400
+#define MITSUBISHI_AIRCON1_ZERO_SPACE 480
+
+#define MITSUBISHI_AIRCON1_MODE_AUTO  0x60 // Operating mode
+#define MITSUBISHI_AIRCON1_MODE_HEAT  0x48
+#define MITSUBISHI_AIRCON1_MODE_COOL  0x58
+#define MITSUBISHI_AIRCON1_MODE_DRY   0x50
+#define MITSUBISHI_AIRCON1_MODE_FAN   0x00 // ????
+#define MITSUBISHI_AIRCON1_MODE_OFF   0x00 // Power OFF
+#define MITSUBISHI_AIRCON1_MODE_ON    0x20 // Power ON
+#define MITSUBISHI_AIRCON1_FAN_AUTO   0xB8 // Fan speed - mixed with vertical swing...
+#define MITSUBISHI_AIRCON1_FAN1       0x79
+#define MITSUBISHI_AIRCON1_FAN2       0x7A
+#define MITSUBISHI_AIRCON1_FAN3       0x7B
+#define MITSUBISHI_AIRCON1_FAN4       0x7C
 
 // JSON data about supported pumps
 // * name
@@ -193,7 +213,8 @@ static prog_char heatpumpModelData[] PROGMEM = {"\"heatpumpmodels\":["
 "{\"model\":\"panasonic_nke\",\"displayName\":\"Panasonic NKE\",\"numberOfModes\":6,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":6,\"maintenance\":[8,10]},"
 "{\"model\":\"carrier\",\"displayName\":\"Carrier\",\"numberOfModes\":5,\"minTemperature\":17,\"maxTemperature\":30,\"numberOfFanSpeeds\":6},"
 "{\"model\":\"midea\",\"displayName\":\"Ultimate Pro Plus 13FP\",\"numberOfModes\":6,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":4,\"maintenance\":[10]},"
-"{\"model\":\"fujitsu_awyz\",\"displayName\":\"Fujitsu AWYZ\",\"numberOfModes\":5,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":5}"
+"{\"model\":\"fujitsu_awyz\",\"displayName\":\"Fujitsu AWYZ\",\"numberOfModes\":5,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":5},"
+"{\"model\":\"mitsubishi_fd\",\"displayName\":\"Mitsubishi FD\",\"numberOfModes\":5,\"minTemperature\":16,\"maxTemperature\":31,\"numberOfFanSpeeds\":4}"
 "]"};
 
 // Send the Panasonic CKP code
@@ -554,7 +575,7 @@ void sendFujitsu(byte operatingMode, byte fanSpeed, byte temperature)
   // Set the temperature on the template message
   FujitsuTemplate[8] = (temperature - 16) << 4;
 
-  // Set the operatingmode on the template message
+  // Set the fan speed on the template message
   FujitsuTemplate[10] = fanSpeed;
 
   // Calculate the checksum
@@ -585,6 +606,54 @@ void sendFujitsu(byte operatingMode, byte fanSpeed, byte temperature)
 
   // End mark
   mark(FUJITSU_AIRCON1_BIT_MARK);
+  space(0);
+}
+
+
+// Send the Mitsubishi code
+
+void sendMitsubishi(byte powerMode, byte operatingMode, byte fanSpeed, byte temperature)
+{
+  byte MitsubishiTemplate[] = { 0x23, 0xCB, 0x26, 0x01, 0x00, 0x20, 0x48, 0x00, 0xC0, 0x7A, 0x61, 0x00, 0x00, 0x00, 0x10, 0x40, 0x00, 0x00 };
+  //                            0     1     2     3     4     5     6     7     8     9    10     11    12    13    14    15    16    17
+
+  byte checksum = 0x00;
+
+  // Set the operatingmode on the template message
+
+  MitsubishiTemplate[5] = powerMode;
+  MitsubishiTemplate[6] = operatingMode;
+
+  // Set the temperature on the template message
+  MitsubishiTemplate[7] = temperature - 16;
+
+  // Set the operatingmode on the template message
+  MitsubishiTemplate[9] = fanSpeed;
+
+  // Calculate the checksum
+  for (int i=0; i<17; i++) {
+    checksum += MitsubishiTemplate[i];
+  }
+
+  MitsubishiTemplate[17] = checksum;
+
+  // 40 kHz PWM frequency
+  enableIROut(40);
+
+  // The Mitsubishi data is repeated twice
+  for (int j=0; j<2; j++) {
+    // Header
+    mark(MITSUBISHI_AIRCON1_HDR_MARK);
+    space(MITSUBISHI_AIRCON1_HDR_SPACE);
+
+    // Data
+    for (int i=0; i<sizeof(MitsubishiTemplate); i++) {
+      sendIRByte(MitsubishiTemplate[i], MITSUBISHI_AIRCON1_BIT_MARK, MITSUBISHI_AIRCON1_ZERO_SPACE, MITSUBISHI_AIRCON1_ONE_SPACE);
+    }
+  }
+
+  // End mark
+  mark(MITSUBISHI_AIRCON1_BIT_MARK);
   space(0);
 }
 
@@ -1038,6 +1107,70 @@ void sendFujitsuCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, 
 }
 
 
+// Mitsubishi MSZ FD-25 numeric values to command bytes
+
+void sendMitsubishiCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCmd, byte temperatureCmd, byte swingVCmd, byte swingHCmd)
+{
+  // Sensible defaults for the heat pump mode
+
+  byte powerMode = MITSUBISHI_AIRCON1_MODE_ON;
+  byte operatingMode = MITSUBISHI_AIRCON1_MODE_HEAT;
+  byte fanSpeed = MITSUBISHI_AIRCON1_FAN_AUTO;
+  byte temperature = 23;
+
+  if (powerModeCmd == 0)
+  {
+    powerMode = MITSUBISHI_AIRCON1_MODE_OFF;
+  }
+
+  switch (operatingModeCmd)
+  {
+    case 1:
+      operatingMode = MITSUBISHI_AIRCON1_MODE_AUTO;
+      break;
+    case 2:
+      operatingMode = MITSUBISHI_AIRCON1_MODE_HEAT;
+      break;
+    case 3:
+      operatingMode = MITSUBISHI_AIRCON1_MODE_COOL;
+      break;
+    case 4:
+      operatingMode = MITSUBISHI_AIRCON1_MODE_DRY;
+      break;
+    case 5:
+      operatingMode = MITSUBISHI_AIRCON1_MODE_FAN;
+      // TODO, find out the command for this
+     break;
+  }
+
+  switch (fanSpeedCmd)
+  {
+    case 1:
+      fanSpeed = MITSUBISHI_AIRCON1_FAN_AUTO;
+      break;
+    case 2:
+      fanSpeed = MITSUBISHI_AIRCON1_FAN1;
+      break;
+    case 3:
+      fanSpeed = MITSUBISHI_AIRCON1_FAN2;
+      break;
+    case 4:
+      fanSpeed = MITSUBISHI_AIRCON1_FAN3;
+      break;
+    case 5:
+      fanSpeed = MITSUBISHI_AIRCON1_FAN4;
+      break;
+  }
+
+  if ( temperatureCmd > 15 && temperatureCmd < 32)
+  {
+    temperature = temperatureCmd;
+  }
+
+  sendMitsubishi(powerMode, operatingMode, fanSpeed, temperature);
+}
+
+
 // Send a byte over IR
 
 void sendIRByte(byte sendByte, int bitMarkLength, int zeroSpaceLength, int oneSpaceLength)
@@ -1256,8 +1389,12 @@ void loop()
         {
           sendFujitsuCmd(power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
         }
+        else if (strcmp_P(model->valuestring, PSTR("mitsubishi_fd")) == 0)
+        {
+          sendMitsubishiCmd(power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
+        }
         else {
-         Serial.print(F("got nothing: "));
+         Serial.print(F("Unsupported model: "));
          Serial.println(model->valuestring);
         }
       }

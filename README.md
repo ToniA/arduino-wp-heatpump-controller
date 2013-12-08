@@ -1,13 +1,15 @@
 arduino-wp-heatpump-controller
 ==============================
 
-Control a Panasonic, Midea, Carrier or Fujitsu heat pump/split unit air conditioner with Arduino using a Windows Phone 8 application
+Control a Panasonic, Midea, Carrier, Fujitsu or MItsubishi heat pump/split unit air conditioner with Arduino using a Windows Phone 8 application
 Currently supports at least these models 
-* Panasonic E9/E12-CKP and E9/E12-DKE (Panasonic remote control P/N A75C2295 and P/N A75C2616)
-* Panasonic E9/E12-NKE and E9/E12-JKE
+* Panasonic E9/E12-CKP (Panasonic remote control P/N A75C2295)
+* Panasonic E9/E12-DKE (Panasonic remote control P/N A75C2616)
+* Panasonic E9/E12-JKE and E9/E12-NKE
 * Midea MSR1-12HRN1-QC2 + MOA1-12HN1-QC2, sold as Ultimate Pro Plus Basic 13FP in Finland (Midea remote control P/N RG51M1/E)
 * Carrier 42NQV035G / 38NYV035H2 (Carrier remote control P/N WH-L05SE)
 * Fujitsu Nocria AWYZ14 (remote control P/N AR-PZ2)
+* Mitsubishi MSZ FD-25 (probably also FD-35)
 
 For the Windows Phone 8 application source, see my other repository
 https://github.com/ToniA/wp8-heatpumpcontrol
@@ -47,12 +49,12 @@ sock.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
 
 # Ask for the identity
 sock.sendto('{"command":"identify"}', ('255.255.255.255', 49722))
-data, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
+data, addr = sock.recvfrom(2048) # buffer size is 1024 bytes
 print "message from %s: %s" % (addr, data)
 
 # Send a command to a controller
 sock.sendto('{"command":"command","fan":4,"identity":"02:26:89:28:25:C5","mode":2,"model":"panasonic_ckp","power":1,"temperature":24}', ('255.255.255.255', 49722))
-data, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
+data, addr = sock.recvfrom(2048) # buffer size is 1024 bytes
 print "message from %s: %s" % (addr, data)
 ```
 
