@@ -1,32 +1,23 @@
-// JSON / Windows Phone Push Messages based application to control Panasonic heat pumps / airconditioning devices
-// * Panasonic CKP series
-// * Panasonic DKE series
-//
-// Connect an IR led (with 1k resistor in series)
-// between GND and digital pin 3
-//
-// Requires the Ethernet shield
-//
+// See the README.md
 
 #include <Arduino.h>
-#include "SPI.h"
-#include "avr/pgmspace.h"
+#include <SPI.h>
+#include <avr/pgmspace.h>
 #include <avr/wdt.h>      // For the hardware watchdog
-#include "Ethernet.h"
-#include <Timer.h>        // For the CKP cancel timer, and for the watchdog
-
 #include <Ethernet.h>
 #include <EEPROM.h>
+
+// Timer.h consumes 0xAA SRAM for the 10 timers on 'timer'
+#include <Timer.h>        // For the CKP cancel timer, and for the watchdog
+
+// aJSON.h consumes 0x100 bytes of SRAM for 'global_buffer'
 #include <aJSON.h> // from https://github.com/interactive-matter/aJson
 
-// Enter a MAC address and IP address for your controller below.
-// The IP address will be dependent on your local network:
-byte macAddress[] = { 0x02, 0x26, 0x89, 0x00, 0x00, 0x00 };
-char macstr[18];
+// This sketch uses DHCP. and a random-generated MAC address
+byte macAddress[6] = { 0x02, 0x26, 0x89, 0x00, 0x00, 0x00 };
+char macstr[18] = "02:26:89:00:00:00";
 
-// IP address settings
-IPAddress ip(192, 168, 0, 12);  // This MAC/IP address pair is also set as a static lease on the router
-IPAddress broadcast(192, 168, 0, 255);
+// UDP and TCP sockets
 EthernetUDP WPudp;
 EthernetClient client;
 
@@ -37,7 +28,7 @@ aJsonStream WPudp_stream(&WPudp);
 Timer timer;
 byte panasonicCancelTimer = 0;
 
-// The Windows Phone application port, randomly chosen :)
+// The UDP port the server listens to, randomly chosen :)
 const int WPudpPort = 49722;
 
 // Infrared LED on digital PIN 3 (needs a PWM pin)
@@ -117,6 +108,7 @@ const int WPudpPort = 49722;
 #define PANASONIC_AIRCON2_HS_MRIGHT  0x0B
 #define PANASONIC_AIRCON2_HS_RIGHT   0x0C
 
+// Panasonic message templates
 #define PANASONIC_DKE 0
 #define PANASONIC_JKE 1
 #define PANASONIC_NKE 2
@@ -194,7 +186,7 @@ const int WPudpPort = 49722;
 // * numberOfFanSpeeds
 // * maintenance modes
 
-prog_char heatpumpModelData[] PROGMEM = {"\"heatpumpmodels\":["
+static prog_char heatpumpModelData[] PROGMEM = {"\"heatpumpmodels\":["
 "{\"model\":\"panasonic_ckp\",\"displayName\":\"Panasonic CKP\",\"numberOfModes\":5,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":6},"
 "{\"model\":\"panasonic_dke\",\"displayName\":\"Panasonic DKE\",\"numberOfModes\":5,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":6},"
 "{\"model\":\"panasonic_jke\",\"displayName\":\"Panasonic JKE\",\"numberOfModes\":5,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":6},"
@@ -286,9 +278,9 @@ void sendPanasonicCKPraw(byte sendBuffer[])
 
 void sendPanasonicCKPOnOff(boolean powerState, boolean cancelTimer)
 {
-  byte ON_msg[] =     { 0x7F, 0x38, 0xBF, 0x38, 0x10, 0x3D, 0x80, 0x3D, 0x09, 0x34, 0x80, 0x34 }; //  ON at 00:10, time now 00:09, no OFF timing
-  byte OFF_msg[] =    { 0x10, 0x38, 0x80, 0x38, 0x7F, 0x3D, 0xBF, 0x3D, 0x09, 0x34, 0x80, 0x34 }; // OFF at 00:10, time now 00:09, no ON timing
-  byte CANCEL_msg[] = { 0x7F, 0x38, 0xBF, 0x38, 0x7F, 0x3D, 0xBF, 0x3D, 0x17, 0x34, 0x80, 0x34 }; // Timer CANCEL
+  static prog_uint8_t ON_msg[] PROGMEM =     { 0x7F, 0x38, 0xBF, 0x38, 0x10, 0x3D, 0x80, 0x3D, 0x09, 0x34, 0x80, 0x34 }; //  ON at 00:10, time now 00:09, no OFF timing
+  static prog_uint8_t OFF_msg[] PROGMEM =    { 0x10, 0x38, 0x80, 0x38, 0x7F, 0x3D, 0xBF, 0x3D, 0x09, 0x34, 0x80, 0x34 }; // OFF at 00:10, time now 00:09, no ON timing
+  static prog_uint8_t CANCEL_msg[] PROGMEM = { 0x7F, 0x38, 0xBF, 0x38, 0x7F, 0x3D, 0xBF, 0x3D, 0x17, 0x34, 0x80, 0x34 }; // Timer CANCEL
 
   byte *sendBuffer;
 
@@ -343,7 +335,7 @@ void sendPanasonicCKPCancelTimer()
 void sendPanasonic(byte model, byte operatingMode, byte fanSpeed, byte temperature, byte swingV, byte swingH)
 {
   // Only bytes 13, 14, 16, 17 and 26 are modified, DKE and JKE seem to share the same template?
-  byte panasonicTemplate[][27] = {
+  static prog_uint8_t panasonicProgmemTemplate[][27] PROGMEM = {
     // DKE, model 0
     { 0x02, 0x20, 0xE0, 0x04, 0x00, 0x00, 0x00, 0x06, 0x02, 0x20, 0xE0, 0x04, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x0E, 0xE0, 0x00, 0x00, 0x01, 0x00, 0x06, 0x00 },
     // JKE, model 1
@@ -353,14 +345,17 @@ void sendPanasonic(byte model, byte operatingMode, byte fanSpeed, byte temperatu
     //   0     1     2     3     4     5     6     7     8     9    10    11    12    13    14   15     16    17    18    19    20    21    22    23    24    25    26
   };
 
+  // Save some SRAM by only having one copy of the template on the SRAM
+  byte panasonicTemplate[27];
+  memcpy_P(panasonicTemplate, panasonicProgmemTemplate[model], sizeof(panasonicTemplate));
 
-  panasonicTemplate[model][13] = operatingMode;
-  panasonicTemplate[model][14] = temperature << 1;
-  panasonicTemplate[model][16] = fanSpeed | swingV;
+  panasonicTemplate[13] = operatingMode;
+  panasonicTemplate[14] = temperature << 1;
+  panasonicTemplate[16] = fanSpeed | swingV;
 
   // Only the DKE model has a setting for the horizontal air flow
   if ( model == PANASONIC_DKE) {
-    panasonicTemplate[model][17] = swingH;
+    panasonicTemplate[17] = swingH;
   }
 
   // Checksum calculation
@@ -368,10 +363,10 @@ void sendPanasonic(byte model, byte operatingMode, byte fanSpeed, byte temperatu
   byte checksum = 0xF4;
 
   for (int i=0; i<26; i++) {
-    checksum += panasonicTemplate[model][i];
+    checksum += panasonicTemplate[i];
   }
 
-  panasonicTemplate[model][26] = checksum;
+  panasonicTemplate[26] = checksum;
 
   // 40 kHz PWM frequency
   enableIROut(40);
@@ -382,7 +377,7 @@ void sendPanasonic(byte model, byte operatingMode, byte fanSpeed, byte temperatu
 
   // First 8 bytes
   for (int i=0; i<8; i++) {
-    sendIRByte(panasonicTemplate[model][i], PANASONIC_AIRCON2_BIT_MARK, PANASONIC_AIRCON2_ZERO_SPACE, PANASONIC_AIRCON2_ONE_SPACE);
+    sendIRByte(panasonicTemplate[i], PANASONIC_AIRCON2_BIT_MARK, PANASONIC_AIRCON2_ZERO_SPACE, PANASONIC_AIRCON2_ONE_SPACE);
   }
 
   // Pause
@@ -395,7 +390,7 @@ void sendPanasonic(byte model, byte operatingMode, byte fanSpeed, byte temperatu
 
   // Last 19 bytes
   for (int i=8; i<27; i++) {
-    sendIRByte(panasonicTemplate[model][i], PANASONIC_AIRCON2_BIT_MARK, PANASONIC_AIRCON2_ZERO_SPACE, PANASONIC_AIRCON2_ONE_SPACE);
+    sendIRByte(panasonicTemplate[i], PANASONIC_AIRCON2_BIT_MARK, PANASONIC_AIRCON2_ZERO_SPACE, PANASONIC_AIRCON2_ONE_SPACE);
   }
 
   mark(PANASONIC_AIRCON2_BIT_MARK);
@@ -409,10 +404,10 @@ void sendMidea(byte operatingMode, byte fanSpeed, byte temperature)
 {
   byte sendBuffer[3] = { 0x4D, 0x00, 0x00 }; // First byte is always 0x4D
 
-  byte temperatures[] = {0, 8, 12, 4, 6, 14, 10, 2, 3, 11, 9, 1, 5, 13 };
+  static prog_uint8_t temperatures[] PROGMEM = {0, 8, 12, 4, 6, 14, 10, 2, 3, 11, 9, 1, 5, 13 };
 
-  byte OffMsg[] = {0x4D, 0xDE, 0x07 };
-  byte FPMsg[]  = {0xAD, 0xAF, 0xB5 };
+  static prog_uint8_t OffMsg[] PROGMEM = {0x4D, 0xDE, 0x07 };
+  static prog_uint8_t FPMsg[] PROGMEM =  {0xAD, 0xAF, 0xB5 };
 
   if (operatingMode == MIDEA_AIRCON1_MODE_OFF)
   {
@@ -486,7 +481,7 @@ void sendCarrier(byte operatingMode, byte fanSpeed, byte temperature)
 {
   byte sendBuffer[9] = { 0x4f, 0xb0, 0xc0, 0x3f, 0x80, 0x00, 0x00, 0x00, 0x00 }; // The data is on the last four bytes
 
-  byte temperatures[] = { 0x00, 0x08, 0x04, 0x0c, 0x02, 0x0a, 0x06, 0x0e, 0x01, 0x09, 0x05, 0x0d, 0x03, 0x0b };
+  static prog_uint8_t temperatures[] PROGMEM = { 0x00, 0x08, 0x04, 0x0c, 0x02, 0x0a, 0x06, 0x0e, 0x01, 0x09, 0x05, 0x0d, 0x03, 0x0b };
   byte checksum = 0;
 
   sendBuffer[5] = temperatures[(temperature-17)];
@@ -550,7 +545,7 @@ void sendFujitsu(byte operatingMode, byte fanSpeed, byte temperature)
   byte FujitsuTemplate[] = { 0x14, 0x63, 0x00, 0x10, 0x10, 0xFE, 0x09, 0x30, 0x80, 0x04, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00 };
   //                            0     1     2     3     4     5     6     7     8     9    10    11    12    13    14    15
 
-  byte OFF_msg[] =         { 0x14, 0x63, 0x00, 0x10, 0x10, 0x02, 0xFD };
+  static prog_uint8_t OFF_msg[] PROGMEM = { 0x14, 0x63, 0x00, 0x10, 0x10, 0x02, 0xFD };
   byte checksum = 0x00;
 
   // Set the operatingmode on the template message
@@ -1100,7 +1095,8 @@ void setup()
 {
   // Initialize serial
   Serial.begin(9600);
-  Serial.print(F("Starting... "));
+  delay(100);
+  Serial.println(F("Starting... "));
 
   // Ethernet shield reset trick
   // Need to cut the RESET lines (also from ICSP header) and connect an I/O to RESET on the shield
@@ -1116,8 +1112,22 @@ void setup()
   // generate or read the already generated MAC address
   generateMAC();
 
-  // initialize the Ethernet adapter
-  Ethernet.begin(macAddress, ip);
+  Serial.println("Obtaining IP address from DHCP server...");
+
+  // initialize the Ethernet adapter with DHCP
+  if(Ethernet.begin(macAddress) == 0) {
+    Serial.println("Failed to configure Ethernet using DHCP");
+
+    wdt_enable(WDTO_8S);
+
+    while(true)   // no point in carrying on, so stay in endless loop until watchdog reset
+      ;
+  }
+
+  delay(1000); // give the Ethernet shield a second to initialize
+
+  Serial.print("IP address from DHCP server: ");
+  Serial.println(Ethernet.localIP());
 
   // Initialize the Windows Phone app UDP port
   WPudp.begin(WPudpPort);
@@ -1131,7 +1141,7 @@ void setup()
   wdt_enable(WDTO_8S);
   timer.every(2000, feedWatchdog);
 
-  Serial.println(F("Started"));
+  Serial.println(F("\nStarted\n"));
 }
 
 
@@ -1325,14 +1335,7 @@ void sendNotification(aJsonObject *pushurl_channel, char *payload1, const prog_c
     client.print(F(" HTTP/1.1\r\n"));
 
     client.print(F("Host: "));
-    client.print(ip[0]);
-    client.print(F("."));
-    client.print(ip[1]);
-    client.print(F("."));
-    client.print(ip[2]);
-    client.print(F("."));
-    client.print(ip[3]);
-
+    client.print(Ethernet.localIP());
     client.print(F("\r\nUser-Agent: Arduino/1.0\r\n"));
     client.print(F("Content-Type: text/xml\r\n"));
     client.print(F("Connection: close\r\n"));
@@ -1435,7 +1438,7 @@ void generateMAC()
       EEPROM.write(E2END - 6 + i, macAddress[i]);
     }
   }
-  snprintf(macstr, 18, "%02X:%02X:%02X:%02X:%02X:%02X", macAddress[0], macAddress[1], macAddress[2], macAddress[3], macAddress[4], macAddress[5]);
+  snprintf_P(macstr, 18, PSTR("%02X:%02X:%02X:%02X:%02X:%02X"), macAddress[0], macAddress[1], macAddress[2], macAddress[3], macAddress[4], macAddress[5]);
 
   // Print out the MAC address
   Serial.print(F("MAC: "));
