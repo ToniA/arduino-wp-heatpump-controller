@@ -1,7 +1,7 @@
 arduino-wp-heatpump-controller
 ==============================
 
-Control a Panasonic, Midea, Carrier, Fujitsu or MItsubishi heat pump/split unit air conditioner with Arduino using a Windows Phone 8 application
+Control a Panasonic, Midea, Carrier, Fujitsu or Mitsubishi heat pump/split unit air conditioner with Arduino using a Windows Phone 8 application, or directly using UDP broadcasts
 Currently supports at least these models 
 * Panasonic E9/E12-CKP (Panasonic remote control P/N A75C2295)
 * Panasonic E9/E12-DKE (Panasonic remote control P/N A75C2616)
@@ -9,7 +9,7 @@ Currently supports at least these models
 * Midea MSR1-12HRN1-QC2 + MOA1-12HN1-QC2, sold as Ultimate Pro Plus Basic 13FP in Finland (Midea remote control P/N RG51M1/E)
 * Carrier 42NQV035G / 38NYV035H2 (Carrier remote control P/N WH-L05SE)
 * Fujitsu Nocria AWYZ14 (remote control P/N AR-PZ2)
-* Mitsubishi MSZ FD-25 (probably also FD-35)
+* Mitsubishi MSZ FD-25, probably also FD-35 (remote control P/N KM09D 0052376)
 
 For the Windows Phone 8 application source, see my other repository
 https://github.com/ToniA/wp8-heatpumpcontrol
@@ -17,8 +17,7 @@ https://github.com/ToniA/wp8-heatpumpcontrol
 Instructions
 ------------
 * Compile the software, and program your Arduino
-    * Note that the default IP address is 192.168.0.12 (DHCP is not used)
-	* Adjust that, as well as the broadcast address as needed
+    * Note that the schema creates a random MAC address, and uses DHCP
 	* Note that for watchdog to work, you need Adaboot (see the source for links)
 * Wire up your Arduino as instructed in the schema
     * Ethernet connection to a switch
@@ -70,7 +69,7 @@ Schema
 
 Bill of materials
 * Arduino :)
-    * I'm using the Duemilanove, other models might require changes due to differences on the PWM pins
+    * I'm using the Duemilanove, other models might require changes due to differences on the PWM pins. I hace code to drive the IR on PWM pin 46 (with timer5) on the Arduino Mega
     * Don't try this with Arduino's with ATmega168, 1k of SRAM just isn't enough
 * Arduino Ethernet shield
 * IR led

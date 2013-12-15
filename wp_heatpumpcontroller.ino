@@ -183,7 +183,7 @@ const int WPudpPort = 49722;
 #define MITSUBISHI_AIRCON1_BIT_MARK   430
 #define MITSUBISHI_AIRCON1_ONE_SPACE  1250
 #define MITSUBISHI_AIRCON1_ZERO_SPACE 390
-#define MITSUBISHI_AIRCON1_MSG_SPACE  16000
+#define MITSUBISHI_AIRCON1_MSG_SPACE  17500
 
 #define MITSUBISHI_AIRCON1_MODE_AUTO  0x60 // Operating mode
 #define MITSUBISHI_AIRCON1_MODE_HEAT  0x48
@@ -1144,8 +1144,9 @@ void sendMitsubishiCmd(byte powerModeCmd, byte operatingModeCmd, byte fanSpeedCm
       operatingMode = MITSUBISHI_AIRCON1_MODE_DRY;
       break;
     case 5:
-      operatingMode = MITSUBISHI_AIRCON1_MODE_FAN;
-      // TODO, find out the command for this
+      operatingMode = MITSUBISHI_AIRCON1_MODE_COOL;
+      // Temperature needs to be set to 31 degrees for 'simulated' FAN mode
+      temperatureCmd = 31;
      break;
   }
 
@@ -1212,8 +1213,17 @@ void mark(int time) {
 void space(int time) {
   // Sends an IR space for the specified number of microseconds.
   // A space is no output, so the PWM output is disabled.
+
   (TCCR2A &= ~(_BV(COM2B1))); // Disable pin 3 PWM output
-  delayMicroseconds(time);
+
+  // Mitsubishi uses > 16383us delays, and delayMicroseconds only works up to 2^14 - 1 us
+  // Use the less accurate milliseconds delay for longer delays
+
+  if (time < 16383) {
+    delayMicroseconds(time);
+  } else {
+    delay(time/1000);
+  }
 }
 
 void enableIROut(int khz) {
