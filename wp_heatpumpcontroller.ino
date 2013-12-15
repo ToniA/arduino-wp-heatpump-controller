@@ -206,7 +206,7 @@ const int WPudpPort = 49722;
 // * numberOfFanSpeeds
 // * maintenance modes
 
-static prog_char heatpumpModelData[] PROGMEM = {"\"heatpumpmodels\":["
+static const prog_char heatpumpModelData[] PROGMEM = {"\"heatpumpmodels\":["
 "{\"model\":\"panasonic_ckp\",\"displayName\":\"Panasonic CKP\",\"numberOfModes\":5,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":6},"
 "{\"model\":\"panasonic_dke\",\"displayName\":\"Panasonic DKE\",\"numberOfModes\":5,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":6},"
 "{\"model\":\"panasonic_jke\",\"displayName\":\"Panasonic JKE\",\"numberOfModes\":5,\"minTemperature\":16,\"maxTemperature\":30,\"numberOfFanSpeeds\":6},"
@@ -299,20 +299,19 @@ void sendPanasonicCKPraw(byte sendBuffer[])
 
 void sendPanasonicCKPOnOff(boolean powerState, boolean cancelTimer)
 {
-  static prog_uint8_t ON_msg[] PROGMEM =     { 0x7F, 0x38, 0xBF, 0x38, 0x10, 0x3D, 0x80, 0x3D, 0x09, 0x34, 0x80, 0x34 }; //  ON at 00:10, time now 00:09, no OFF timing
-  static prog_uint8_t OFF_msg[] PROGMEM =    { 0x10, 0x38, 0x80, 0x38, 0x7F, 0x3D, 0xBF, 0x3D, 0x09, 0x34, 0x80, 0x34 }; // OFF at 00:10, time now 00:09, no ON timing
-  static prog_uint8_t CANCEL_msg[] PROGMEM = { 0x7F, 0x38, 0xBF, 0x38, 0x7F, 0x3D, 0xBF, 0x3D, 0x17, 0x34, 0x80, 0x34 }; // Timer CANCEL
+  static const prog_uint8_t ON_msg[] PROGMEM =     { 0x7F, 0x38, 0xBF, 0x38, 0x10, 0x3D, 0x80, 0x3D, 0x09, 0x34, 0x80, 0x34 }; //  ON at 00:10, time now 00:09, no OFF timing
+  static const prog_uint8_t OFF_msg[] PROGMEM =    { 0x10, 0x38, 0x80, 0x38, 0x7F, 0x3D, 0xBF, 0x3D, 0x09, 0x34, 0x80, 0x34 }; // OFF at 00:10, time now 00:09, no ON timing
+  static const prog_uint8_t CANCEL_msg[] PROGMEM = { 0x7F, 0x38, 0xBF, 0x38, 0x7F, 0x3D, 0xBF, 0x3D, 0x17, 0x34, 0x80, 0x34 }; // Timer CANCEL
 
-  byte *sendBuffer;
+  // Save some SRAM by only having one copy of the template on the SRAM
+  byte sendBuffer[sizeof(ON_msg)];
 
   if ( cancelTimer == true ) {
-    sendBuffer = CANCEL_msg;
+    memcpy_P(sendBuffer, CANCEL_msg, sizeof(ON_msg));
+  } else if ( powerState == true ) {
+    memcpy_P(sendBuffer, ON_msg, sizeof(ON_msg));
   } else {
-    if ( powerState == true ) {
-      sendBuffer = ON_msg;
-    } else {
-      sendBuffer = OFF_msg;
-    }
+    memcpy_P(sendBuffer, OFF_msg, sizeof(ON_msg));
   }
 
   // 40 kHz PWM frequency
@@ -356,7 +355,7 @@ void sendPanasonicCKPCancelTimer()
 void sendPanasonic(byte model, byte operatingMode, byte fanSpeed, byte temperature, byte swingV, byte swingH)
 {
   // Only bytes 13, 14, 16, 17 and 26 are modified, DKE and JKE seem to share the same template?
-  static prog_uint8_t panasonicProgmemTemplate[][27] PROGMEM = {
+  static const prog_uint8_t panasonicProgmemTemplate[][27] PROGMEM = {
     // DKE, model 0
     { 0x02, 0x20, 0xE0, 0x04, 0x00, 0x00, 0x00, 0x06, 0x02, 0x20, 0xE0, 0x04, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x0E, 0xE0, 0x00, 0x00, 0x01, 0x00, 0x06, 0x00 },
     // JKE, model 1
@@ -425,18 +424,18 @@ void sendMidea(byte operatingMode, byte fanSpeed, byte temperature)
 {
   byte sendBuffer[3] = { 0x4D, 0x00, 0x00 }; // First byte is always 0x4D
 
-  static prog_uint8_t temperatures[] PROGMEM = {0, 8, 12, 4, 6, 14, 10, 2, 3, 11, 9, 1, 5, 13 };
+  static const prog_uint8_t temperatures[] PROGMEM = {0, 8, 12, 4, 6, 14, 10, 2, 3, 11, 9, 1, 5, 13 };
 
-  static prog_uint8_t OffMsg[] PROGMEM = {0x4D, 0xDE, 0x07 };
-  static prog_uint8_t FPMsg[] PROGMEM =  {0xAD, 0xAF, 0xB5 };
+  static const prog_uint8_t OffMsg[] PROGMEM = {0x4D, 0xDE, 0x07 };
+  static const prog_uint8_t FPMsg[] PROGMEM =  {0xAD, 0xAF, 0xB5 };
 
   if (operatingMode == MIDEA_AIRCON1_MODE_OFF)
   {
-    sendMidearaw( OffMsg );
+    memcpy_P(sendBuffer, OffMsg, sizeof(sendBuffer));
   }
   else if (operatingMode == MIDEA_AIRCON1_MODE_FP)
   {
-    sendMidearaw( FPMsg );
+    memcpy_P(sendBuffer, FPMsg, sizeof(sendBuffer));
   }
   else
   {
@@ -450,10 +449,10 @@ void sendMidea(byte operatingMode, byte fanSpeed, byte temperature)
     {
       sendBuffer[2] = operatingMode | temperatures[temperature-17];
     }
-
-    // Send the code
-    sendMidearaw(sendBuffer);
   }
+
+  // Send the code
+  sendMidearaw(sendBuffer);
 }
 
 // Send the Midea raw code
@@ -502,7 +501,7 @@ void sendCarrier(byte operatingMode, byte fanSpeed, byte temperature)
 {
   byte sendBuffer[9] = { 0x4f, 0xb0, 0xc0, 0x3f, 0x80, 0x00, 0x00, 0x00, 0x00 }; // The data is on the last four bytes
 
-  static prog_uint8_t temperatures[] PROGMEM = { 0x00, 0x08, 0x04, 0x0c, 0x02, 0x0a, 0x06, 0x0e, 0x01, 0x09, 0x05, 0x0d, 0x03, 0x0b };
+  static const prog_uint8_t temperatures[] PROGMEM = { 0x00, 0x08, 0x04, 0x0c, 0x02, 0x0a, 0x06, 0x0e, 0x01, 0x09, 0x05, 0x0d, 0x03, 0x0b };
   byte checksum = 0;
 
   sendBuffer[5] = temperatures[(temperature-17)];
@@ -566,7 +565,7 @@ void sendFujitsu(byte operatingMode, byte fanSpeed, byte temperature)
   byte FujitsuTemplate[] = { 0x14, 0x63, 0x00, 0x10, 0x10, 0xFE, 0x09, 0x30, 0x80, 0x04, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00 };
   //                            0     1     2     3     4     5     6     7     8     9    10    11    12    13    14    15
 
-  static prog_uint8_t OFF_msg[] PROGMEM = { 0x14, 0x63, 0x00, 0x10, 0x10, 0x02, 0xFD };
+  static const prog_uint8_t OFF_msg[] PROGMEM = { 0x14, 0x63, 0x00, 0x10, 0x10, 0x02, 0xFD };
   byte checksum = 0x00;
 
   // Set the operatingmode on the template message
@@ -615,7 +614,7 @@ void sendFujitsu(byte operatingMode, byte fanSpeed, byte temperature)
 void sendMitsubishi(byte powerMode, byte operatingMode, byte fanSpeed, byte temperature)
 {
   byte MitsubishiTemplate[] = { 0x23, 0xCB, 0x26, 0x01, 0x00, 0x20, 0x48, 0x00, 0xC0, 0x7A, 0x61, 0x00, 0x00, 0x00, 0x10, 0x40, 0x00, 0x00 };
-  //                            0     1     2     3     4     5     6     7     8     9    10     11    12    13    14    15    16    17
+  //                            0     1     2     3     4     5     6     7     8     9     10    11    12    13    14    15    16    17
 
   byte checksum = 0x00;
 
@@ -1293,7 +1292,7 @@ void loop()
 
   // The JSON response
   char response[54];
-  char *responseFmt = PSTR("{\"command\":\"%s\",\"identity\":\"%s\"");
+  const char *responseFmt = PSTR("{\"command\":\"%s\",\"identity\":\"%s\"");
 
   // Process the timers
   timer.update();
