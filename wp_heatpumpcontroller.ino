@@ -41,7 +41,7 @@ const int WPudpPort = 49722;
 // Entropy pin needs to be unconnected
 #define ENTROPY_PIN       A5
 
-// Panasonic CKP timing constants
+// Panasonic CKP timing constants (remote control P/N A75C2295)
 #define PANASONIC_AIRCON1_HDR_MARK   3400
 #define PANASONIC_AIRCON1_HDR_SPACE  3500
 #define PANASONIC_AIRCON1_BIT_MARK   800
@@ -72,7 +72,7 @@ const int WPudpPort = 49722;
 #define PANASONIC_AIRCON1_HS_AUTO    0x08 // Horizontal swing
 #define PANASONIC_AIRCON1_HS_MANUAL  0x00
 
-// Panasonic DKE, JKE & NKE timing constants
+// Panasonic DKE, JKE & NKE timing constants (DKE remote control P/N A75C2616)
 #define PANASONIC_AIRCON2_HDR_MARK   3500
 #define PANASONIC_AIRCON2_HDR_SPACE  1800
 #define PANASONIC_AIRCON2_BIT_MARK   420
@@ -113,7 +113,7 @@ const int WPudpPort = 49722;
 #define PANASONIC_JKE 1
 #define PANASONIC_NKE 2
 
-// Midea timing constants
+// Midea timing constants, Midea MSR1-12HRN1-QC2 + MOA1-12HN1-QC2, sold as Ultimate Pro Plus Basic 13FP in Finland (remote control P/N RG51M1/E)
 #define MIDEA_AIRCON1_HDR_MARK       4350
 #define MIDEA_AIRCON1_HDR_SPACE      4230
 #define MIDEA_AIRCON1_BIT_MARK       520
@@ -135,8 +135,7 @@ const int WPudpPort = 49722;
 #define MIDEA_AIRCON1_FAN2           0x05
 #define MIDEA_AIRCON1_FAN3           0x03
 
-// Carrier 42NQV035G / 38NYV035H2 (remote control WH-L05SE) timing constants and codes
-
+// Carrier (42NQV035G / 38NYV035H2) timing constants (remote control P/N WH-L05SE)
 #define CARRIER_AIRCON1_HDR_MARK   4320
 #define CARRIER_AIRCON1_HDR_SPACE  4350
 #define CARRIER_AIRCON1_BIT_MARK   500
@@ -144,6 +143,7 @@ const int WPudpPort = 49722;
 #define CARRIER_AIRCON1_ZERO_SPACE 550
 #define CARRIER_AIRCON1_MSG_SPACE  7400
 
+// Carrier codes
 #define CARRIER_AIRCON1_MODE_AUTO  0x00 // Operating mode
 #define CARRIER_AIRCON1_MODE_HEAT  0xC0
 #define CARRIER_AIRCON1_MODE_COOL  0x80
@@ -157,13 +157,14 @@ const int WPudpPort = 49722;
 #define CARRIER_AIRCON1_FAN4       0x05
 #define CARRIER_AIRCON1_FAN5       0x03
 
-// Fujitsu Nocria (AWYZ14) IR protocol, remote control P/N AR-PZ2
+// Fujitsu Nocria (AWYZ14) timing constants (remote control P/N AR-PZ2)
 #define FUJITSU_AIRCON1_HDR_MARK    3250
 #define FUJITSU_AIRCON1_HDR_SPACE   1550
 #define FUJITSU_AIRCON1_BIT_MARK    400
 #define FUJITSU_AIRCON1_ONE_SPACE   1200
 #define FUJITSU_AIRCON1_ZERO_SPACE  390
 
+// Fujitsu codes
 #define FUJITSU_AIRCON1_MODE_AUTO  0x00 // Operating mode
 #define FUJITSU_AIRCON1_MODE_HEAT  0x04
 #define FUJITSU_AIRCON1_MODE_COOL  0x01
@@ -176,8 +177,7 @@ const int WPudpPort = 49722;
 #define FUJITSU_AIRCON1_FAN3       0x02
 #define FUJITSU_AIRCON1_FAN4       0x01
 
-// Mitsubishi MSZ FD-25 protocol
-
+// Mitsubishi MSZ FD-25 timing constants (remote control P/N KM09D 0052376)
 #define MITSUBISHI_AIRCON1_HDR_MARK   3500
 #define MITSUBISHI_AIRCON1_HDR_SPACE  1700
 #define MITSUBISHI_AIRCON1_BIT_MARK   430
@@ -185,11 +185,11 @@ const int WPudpPort = 49722;
 #define MITSUBISHI_AIRCON1_ZERO_SPACE 390
 #define MITSUBISHI_AIRCON1_MSG_SPACE  17500
 
+// Mitsubishi codes
 #define MITSUBISHI_AIRCON1_MODE_AUTO  0x60 // Operating mode
 #define MITSUBISHI_AIRCON1_MODE_HEAT  0x48
 #define MITSUBISHI_AIRCON1_MODE_COOL  0x58
 #define MITSUBISHI_AIRCON1_MODE_DRY   0x50
-#define MITSUBISHI_AIRCON1_MODE_FAN   0x00 // ????
 #define MITSUBISHI_AIRCON1_MODE_OFF   0x00 // Power OFF
 #define MITSUBISHI_AIRCON1_MODE_ON    0x20 // Power ON
 #define MITSUBISHI_AIRCON1_FAN_AUTO   0xB8 // Fan speed - mixed with vertical swing...
