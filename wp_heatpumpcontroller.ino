@@ -183,6 +183,7 @@ const int WPudpPort = 49722;
 #define MITSUBISHI_AIRCON1_BIT_MARK   430
 #define MITSUBISHI_AIRCON1_ONE_SPACE  1250
 #define MITSUBISHI_AIRCON1_ZERO_SPACE 390
+#define MITSUBISHI_AIRCON1_MSG_SPACE  16000
 
 #define MITSUBISHI_AIRCON1_MODE_AUTO  0x60 // Operating mode
 #define MITSUBISHI_AIRCON1_MODE_HEAT  0x48
@@ -648,6 +649,12 @@ void sendMitsubishi(byte powerMode, byte operatingMode, byte fanSpeed, byte temp
     // Data
     for (int i=0; i<sizeof(MitsubishiTemplate); i++) {
       sendIRByte(MitsubishiTemplate[i], MITSUBISHI_AIRCON1_BIT_MARK, MITSUBISHI_AIRCON1_ZERO_SPACE, MITSUBISHI_AIRCON1_ONE_SPACE);
+    }
+
+    // Pause between the first and the second data burst
+    if (j == 0) {
+      mark(MITSUBISHI_AIRCON1_BIT_MARK);
+      space(MITSUBISHI_AIRCON1_MSG_SPACE);
     }
   }
 
