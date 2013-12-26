@@ -11,11 +11,23 @@
 #include <Timer.h>        // For the CKP cancel timer, and for the watchdog
 
 // aJSON.h consumes 0x100 bytes of SRAM for 'global_buffer'
-#include <aJSON.h> // from https://github.com/interactive-matter/aJson
+#include <aJSON.h>        // from https://github.com/interactive-matter/aJson
 
-// Windows Phone notification
-#include "WPNotification.h"
-WPNotification *wpNotification = new WPNotification();
+// UDP & Windows Phone notification
+#include "Notification.h"
+Notification *notification = new Notification();
+
+// Save some memory by not including support for all of the heatpumps
+#define SUPPORT_PANASONIC     1 // Panasonic DKE, JKE, NKE
+#define SUPPORT_PANASONIC_CKP 1 // Panasonic CKP
+#define SUPPORT_FUJITSU       0
+#define SUPPORT_CARRIER       0
+#define SUPPORT_MIDEA         0
+#define SUPPORT_MITSUBISHI    1
+
+// DHCP or static IP address. DHCP requires almost 3kbytes more flash
+#define DHCP 0                     // 0 for static IP address, 1 for DHCP
+#define STATIC_IP 192, 168, 0, 12  // The static IP address when not using DHCP
 
 // All heatpumps
 #include <FujitsuHeatpumpIR.h>
@@ -25,16 +37,33 @@ WPNotification *wpNotification = new WPNotification();
 #include <MideaHeatpumpIR.h>
 #include <MitsubishiHeatpumpIR.h>
 
-PanasonicCKPHeatpumpIR *panasonicCKP = new PanasonicCKPHeatpumpIR(); // Need to use the timer cancel method
+#if SUPPORT_PANASONIC_CKP == 1
+PanasonicCKPHeatpumpIR *panasonicCKP = new PanasonicCKPHeatpumpIR(); // The 'HeatpumpIR' class does not have the the timer cancel method
+#endif
+#if SUPPORT_PANASONIC == 1
 HeatpumpIR *panasonicDKE = new PanasonicDKEHeatpumpIR();
 HeatpumpIR *panasonicJKE = new PanasonicJKEHeatpumpIR();
 HeatpumpIR *panasonicNKE = new PanasonicNKEHeatpumpIR();
+#endif
+#if SUPPORT_FUJITSU == 1
 HeatpumpIR *fujitsu = new FujitsuHeatpumpIR();
+#endif
+#if SUPPORT_CARRIER == 1
 HeatpumpIR *carrier = new CarrierHeatpumpIR();
+#endif
+#if SUPPORT_MIDEA == 1
 HeatpumpIR *midea = new MideaHeatpumpIR();
+#endif
+#if SUPPORT_MITSUBISHI == 1
 HeatpumpIR *mitsubishi = new MitsubishiHeatpumpIR();
+#endif
 
-// This sketch uses DHCP. and a random-generated MAC address
+
+#if DHCP == 0
+IPAddress ip(STATIC_IP);  // This MAC/IP address pair should also be set as a static lease on the router, or set to be outside the DHCP address pool
+#endif
+
+// The MAC address is generated randomly and stored in the EEPROM
 byte macAddress[6] = { 0x02, 0x26, 0x89, 0x00, 0x00, 0x00 };
 char macstr[18] = "02:26:89:00:00:00";
 
@@ -77,16 +106,15 @@ static const prog_char heatpumpModelData[] PROGMEM = {"\"heatpumpmodels\":["
 "{\"mdl\":\"panasonic_ckp\",\"dn\":\"Panasonic CKP\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":6},"
 "{\"mdl\":\"panasonic_dke\",\"dn\":\"Panasonic DKE\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":6},"
 "{\"mdl\":\"panasonic_jke\",\"dn\":\"Panasonic JKE\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":6},"
-"{\"mdl\":\"panasonic_nke\",\"dn\":\"Panasonic NKE\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":6,\"maintenance\":[8,10]},"
+"{\"mdl\":\"panasonic_nke\",\"dn\":\"Panasonic NKE\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":6,\"maint\":[8,10]},"
 "{\"mdl\":\"carrier\",\"dn\":\"Carrier\",\"mds\":5,\"mT\":17,\"xT\":30,\"fs\":6},"
-"{\"mdl\":\"midea\",\"dn\":\"Ultimate Pro Plus 13FP\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":4,\"maintenance\":[10]},"
+"{\"mdl\":\"midea\",\"dn\":\"Ultimate Pro Plus 13FP\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":4,\"maint\":[10]},"
 "{\"mdl\":\"fujitsu_awyz\",\"dn\":\"Fujitsu AWYZ\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":5},"
 "{\"mdl\":\"mitsubishi_fd\",\"dn\":\"Mitsubishi FD\",\"mds\":5,\"mT\":16,\"xT\":31,\"fs\":4}"
 "]"};
 
 
 // The setup
-
 void setup()
 {
   // Initialize serial
@@ -110,6 +138,10 @@ void setup()
 
   Serial.println(F("Obtaining IP address from DHCP server..."));
 
+#if DHCP == 0
+  // initialize the Ethernet adapter with a static IP address
+  Ethernet.begin(macAddress, ip);
+#else
   // initialize the Ethernet adapter with DHCP
   if(Ethernet.begin(macAddress) == 0) {
     Serial.println(F("Failed to configure Ethernet using DHCP"));
@@ -119,10 +151,15 @@ void setup()
     while(true)   // no point in carrying on, so stay in endless loop until watchdog reset
       ;
   }
+#endif
 
   delay(1000); // give the Ethernet shield a second to initialize
 
+#if DHCP == 0
+  Serial.print(F("IP address (static): "));
+#else
   Serial.print(F("IP address from DHCP server: "));
+#endif
   Serial.println(Ethernet.localIP());
 
   // Initialize the Windows Phone app UDP port
@@ -142,9 +179,8 @@ void setup()
 
 
 // The loop
-// * heartbeats
-// * xPL message processing
-
+// * Update the watchdog timer
+// * Listen to the UDP socket
 void loop()
 {
   aJsonObject* jsonObject;
@@ -201,7 +237,13 @@ void loop()
     {
       // Create the response JSON just by printing it - this consumes less memory than using the aJson
       snprintf_P(response, sizeof(response), responseFmt, command->valuestring, macstr);
-      wpNotification->sendNotification(WPudp, pushurl_channel, response, heatpumpModelData, 3);
+      
+      if (pushurl_channel == NULL) {
+        notification->sendUDPNotification(WPudp, pushurl_channel, response, heatpumpModelData);
+      }
+      else {
+        notification->sendWPNotification(pushurl_channel, response, heatpumpModelData, 3);
+      }
     }
     else if (strcmp_P(command->valuestring, PSTR("command")) == 0)
     {
@@ -218,9 +260,18 @@ void loop()
 
         // Create the response JSON just by printing it - this consumes less memory than using the aJson
         snprintf_P(response, sizeof(response), responseFmt, command->valuestring, macstr);
-        wpNotification->sendNotification(WPudp, pushurl_channel, response, NULL, 3);
+        if (pushurl_channel == NULL) {
+          notification->sendUDPNotification(WPudp, pushurl_channel, response, NULL);
+        }
+        else {
+          notification->sendWPNotification(pushurl_channel, response, NULL, 3);
+        }
 
-        if (strcmp_P(model->valuestring, PSTR("panasonic_ckp")) == 0)
+        if (0) // Dummy condition, to allow all other if's to use 'else if'
+        {
+        }
+#if SUPPORT_PANASONIC_CKP == 1
+        else if (strcmp_P(model->valuestring, PSTR("panasonic_ckp")) == 0)
         {
           panasonicCKP->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 2, 1);
 
@@ -234,6 +285,8 @@ void loop()
           // Note that the argument to 'timer.after' has to be explicitly cast into 'long'
           panasonicCancelTimer = timer.after(2L*60L*1000L, sendPanasonicCKPCancelTimer);
         }
+#endif
+#if SUPPORT_PANASONIC == 1
         else if (strcmp_P(model->valuestring, PSTR("panasonic_dke")) == 0)
         {
           panasonicDKE->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 2, 1);
@@ -246,22 +299,31 @@ void loop()
         {
           panasonicNKE->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 2, 1);
         }
+#endif
+#if SUPPORT_MIDEA == 1
         else if (strcmp_P(model->valuestring, PSTR("midea")) == 0)
         {
           midea->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
         }
+#endif
+#if SUPPORT_CARRIER == 1
         else if (strcmp_P(model->valuestring, PSTR("carrier")) == 0)
         {
           carrier->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
         }
+#endif
+#if SUPPORT_FUJITSU == 1
         else if (strcmp_P(model->valuestring, PSTR("fujitsu_awyz")) == 0)
         {
           fujitsu->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
         }
+#endif
+#if SUPPORT_MITSUBISHI == 1
         else if (strcmp_P(model->valuestring, PSTR("mitsubishi_fd")) == 0)
         {
           mitsubishi->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
-        }     
+        }
+#endif
       }
     }
 
@@ -270,16 +332,17 @@ void loop()
   }
 }
 
+#if SUPPORT_PANASONIC_CKP == 1
 // Cancel the Panasonic CKP timer
 void sendPanasonicCKPCancelTimer()
 {
   panasonicCKP->sendPanasonicCKPCancelTimer(irSender);
 }
+#endif
 
 // Random MAC based on:
 // http://files.pcode.nl/arduino/EthernetPersistentMAC.ino
 // A5 is the entropy PIN for random MAC generation, leave it unconnected
-
 void generateMAC()
 {
   randomSeed(analogRead(ENTROPY_PIN));
@@ -323,9 +386,7 @@ void generateMAC()
   Serial.println(macstr);
 }
 
-//
 // The most important thing of all, feed the watchdog
-//
 void feedWatchdog()
 {
   wdt_reset();
