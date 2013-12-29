@@ -110,7 +110,7 @@ static const prog_char heatpumpModelData[] PROGMEM = {"\"heatpumpmodels\":["
 "{\"mdl\":\"carrier\",\"dn\":\"Carrier\",\"mds\":5,\"mT\":17,\"xT\":30,\"fs\":6},"
 "{\"mdl\":\"midea\",\"dn\":\"Ultimate Pro Plus 13FP\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":4,\"maint\":[10]},"
 "{\"mdl\":\"fujitsu_awyz\",\"dn\":\"Fujitsu AWYZ\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":5},"
-"{\"mdl\":\"mitsubishi_fd\",\"dn\":\"Mitsubishi FD\",\"mds\":5,\"mT\":16,\"xT\":31,\"fs\":4}"
+"{\"mdl\":\"mitsubishi_fd\",\"dn\":\"Mitsubishi FD\",\"mds\":5,\"mT\":16,\"xT\":31,\"fs\":5}"
 "]"};
 
 
@@ -136,12 +136,12 @@ void setup()
   // generate or read the already generated MAC address
   generateMAC();
 
-  Serial.println(F("Obtaining IP address from DHCP server..."));
-
 #if DHCP == 0
   // initialize the Ethernet adapter with a static IP address
   Ethernet.begin(macAddress, ip);
 #else
+  Serial.println(F("Obtaining IP address from DHCP server..."));
+
   // initialize the Ethernet adapter with DHCP
   if(Ethernet.begin(macAddress) == 0) {
     Serial.println(F("Failed to configure Ethernet using DHCP"));
