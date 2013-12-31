@@ -7,8 +7,10 @@
 #include <Ethernet.h>
 #include <EEPROM.h>
 
-// Timer.h consumes 0xAA SRAM for the 10 timers on 'timer'
-#include <Timer.h>        // For the CKP cancel timer, and for the watchdog
+// The default Timer class consumes 0xAA bytes of SRAM for the 10 timers on 'timer'
+// https://github.com/dehapama/Timer is a fork which allows the number of timers to be configured,
+#define MAX_NUMBER_OF_EVENTS 3 // 3 timers consume just 0x33 bytes of SRAM
+#include <Timer.h>             // For the Panasonic CKP cancel timer, and for the watchdog
 
 // aJSON.h consumes 0x100 bytes of SRAM for 'global_buffer'
 #include <aJSON.h>        // from https://github.com/interactive-matter/aJson
@@ -16,14 +18,6 @@
 // UDP & Windows Phone notification
 #include "Notification.h"
 Notification *notification = new Notification();
-
-// Save some memory by not including support for all of the heatpumps
-#define SUPPORT_PANASONIC     1 // Panasonic DKE, JKE, NKE
-#define SUPPORT_PANASONIC_CKP 1 // Panasonic CKP
-#define SUPPORT_FUJITSU       0
-#define SUPPORT_CARRIER       0
-#define SUPPORT_MIDEA         0
-#define SUPPORT_MITSUBISHI    1
 
 // DHCP or static IP address. DHCP requires almost 3kbytes more flash
 #define DHCP 0                     // 0 for static IP address, 1 for DHCP
@@ -37,27 +31,25 @@ Notification *notification = new Notification();
 #include <MideaHeatpumpIR.h>
 #include <MitsubishiHeatpumpIR.h>
 
-#if SUPPORT_PANASONIC_CKP == 1
-PanasonicCKPHeatpumpIR *panasonicCKP = new PanasonicCKPHeatpumpIR(); // The 'HeatpumpIR' class does not have the the timer cancel method
-#endif
-#if SUPPORT_PANASONIC == 1
-HeatpumpIR *panasonicDKE = new PanasonicDKEHeatpumpIR();
-HeatpumpIR *panasonicJKE = new PanasonicJKEHeatpumpIR();
-HeatpumpIR *panasonicNKE = new PanasonicNKEHeatpumpIR();
-#endif
-#if SUPPORT_FUJITSU == 1
-HeatpumpIR *fujitsu = new FujitsuHeatpumpIR();
-#endif
-#if SUPPORT_CARRIER == 1
-HeatpumpIR *carrier = new CarrierHeatpumpIR();
-#endif
-#if SUPPORT_MIDEA == 1
-HeatpumpIR *midea = new MideaHeatpumpIR();
-#endif
-#if SUPPORT_MITSUBISHI == 1
-HeatpumpIR *mitsubishi = new MitsubishiHeatpumpIR();
-#endif
+// Infrared LED on digital PIN 3 (needs a PWM pin)
+// Connect with 100 Ohm resistor in series to GND
+#define IR_LED_PIN        3
 
+IRSender irSender(IR_LED_PIN);
+
+// Array with all supported heatpumps, comment out the ones which are not needed (to save FLASH and SRAM on Duemilanove)
+HeatpumpIR *heatpumpIR[] = {
+                             new PanasonicCKPHeatpumpIR(),
+                             new PanasonicDKEHeatpumpIR(),
+                             new PanasonicJKEHeatpumpIR(),
+                             new PanasonicNKEHeatpumpIR(),
+                             // new CarrierHeatpumpIR(),
+                             // new MideaHeatpumpIR(),
+                             // new FujitsuHeatpumpIR(),
+                             new MitsubishiFDHeatpumpIR(),
+                             // new MitsubishiFEHeatpumpIR(),
+                             NULL // The array must be NULL-terminated
+                           };
 
 #if DHCP == 0
 IPAddress ip(STATIC_IP);  // This MAC/IP address pair should also be set as a static lease on the router, or set to be outside the DHCP address pool
@@ -80,38 +72,11 @@ byte panasonicCancelTimer = 0;
 // The UDP port the server listens to, randomly chosen :)
 const int WPudpPort = 49722;
 
-// Infrared LED on digital PIN 3 (needs a PWM pin)
-// Connect with 100 Ohm resistor in series to GND
-#define IR_LED_PIN        3
-
-IRSender irSender(IR_LED_PIN);
-
 // Ethernet shield reset pin
 #define ETHERNET_RST      A0
 
 // Entropy pin needs to be unconnected
 #define ENTROPY_PIN       A5
-
-// JSON data about supported pumps
-// * model
-// * displayName
-// * numberOfModes
-// * minTemperature
-// * maxTemperature
-// * numberOfFanSpeeds
-// * maintenance modes
-// Tight on flash space, needed to shink down the JSON key names...
-
-static const prog_char heatpumpModelData[] PROGMEM = {"\"heatpumpmodels\":["
-"{\"mdl\":\"panasonic_ckp\",\"dn\":\"Panasonic CKP\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":6},"
-"{\"mdl\":\"panasonic_dke\",\"dn\":\"Panasonic DKE\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":6},"
-"{\"mdl\":\"panasonic_jke\",\"dn\":\"Panasonic JKE\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":6},"
-"{\"mdl\":\"panasonic_nke\",\"dn\":\"Panasonic NKE\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":6,\"maint\":[8,10]},"
-"{\"mdl\":\"carrier\",\"dn\":\"Carrier\",\"mds\":5,\"mT\":17,\"xT\":30,\"fs\":6},"
-"{\"mdl\":\"midea\",\"dn\":\"Ultimate Pro Plus 13FP\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":4,\"maint\":[10]},"
-"{\"mdl\":\"fujitsu_awyz\",\"dn\":\"Fujitsu AWYZ\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":5},"
-"{\"mdl\":\"mitsubishi_fd\",\"dn\":\"Mitsubishi FD\",\"mds\":5,\"mT\":16,\"xT\":31,\"fs\":5}"
-"]"};
 
 
 // The setup
@@ -121,7 +86,7 @@ void setup()
   Serial.begin(9600);
   delay(100);
   Serial.println("Starting... ");
- 
+
   // Ethernet shield reset trick
   // Need to cut the RESET lines (also from ICSP header) and connect an I/O to RESET on the shield
 
@@ -184,11 +149,8 @@ void setup()
 void loop()
 {
   aJsonObject* jsonObject;
-
-  // Sensible defaults
-  int temperature = 23;
-  int operatingMode = 2;
-  int fanSpeed = 1;
+  boolean foundHeatpump;
+  int heatpumpIndex;
 
   // The JSON response
   char response[54];
@@ -201,6 +163,12 @@ void loop()
   int WPPacketSize = WPudp.parsePacket();
   if (WPPacketSize)
   {
+    // Watch out the amount of free SRAM
+    // This program uses dynamic allocation, and using too much also causes problems on freeing up the memory
+    // The amount of free memory should always be the same at the beginning of the loop
+    Serial.print(F("Start: free SRAM: "));
+    Serial.println(freeRam());
+
     Serial.print(F("Received UDP packet of size "));
     Serial.println(WPPacketSize);
     Serial.print(F("From "));
@@ -227,7 +195,7 @@ void loop()
 
     aJsonObject* pushurl_channel = aJson.getObjectItem(jsonObject, "channel");
 
-    if (pushurl_channel != NULL)
+    if (pushurl_channel != NULL && pushurl_channel->type != aJson_NULL)
     {
       Serial.print(F("Pushurl channel: "));
       Serial.println(pushurl_channel->valuestring);
@@ -237,13 +205,16 @@ void loop()
     {
       // Create the response JSON just by printing it - this consumes less memory than using the aJson
       snprintf_P(response, sizeof(response), responseFmt, command->valuestring, macstr);
-      
-      if (pushurl_channel == NULL) {
-        notification->sendUDPNotification(WPudp, pushurl_channel, response, heatpumpModelData);
+
+      if (pushurl_channel == NULL || pushurl_channel->type == aJson_NULL) {
+        notification->sendUDPNotification(WPudp, pushurl_channel, response, sendHeatpumpJson);
       }
       else {
-        notification->sendWPNotification(pushurl_channel, response, heatpumpModelData, 3);
+        notification->sendWPNotification(pushurl_channel, response, NULL, 3);
       }
+
+      // Free the memory used by the JSON objects
+      aJson.deleteItem(jsonObject);
     }
     else if (strcmp_P(command->valuestring, PSTR("command")) == 0)
     {
@@ -258,77 +229,51 @@ void loop()
         aJsonObject* fan = aJson.getObjectItem(jsonObject, "fan");
         aJsonObject* temperature = aJson.getObjectItem(jsonObject, "temperature");
 
+        byte powerCmd = power->valueint;
+        byte operatingModeCmd = mode->valueint;
+        byte temperatureCmd = temperature->valueint;
+        byte fanSpeedCmd = fan->valueint;
+
         // Create the response JSON just by printing it - this consumes less memory than using the aJson
         snprintf_P(response, sizeof(response), responseFmt, command->valuestring, macstr);
-        if (pushurl_channel == NULL) {
+        if (pushurl_channel == NULL || pushurl_channel->type == aJson_NULL) {
           notification->sendUDPNotification(WPudp, pushurl_channel, response, NULL);
         }
         else {
           notification->sendWPNotification(pushurl_channel, response, NULL, 3);
         }
 
-        if (0) // Dummy condition, to allow all other if's to use 'else if'
-        {
-        }
-#if SUPPORT_PANASONIC_CKP == 1
-        else if (strcmp_P(model->valuestring, PSTR("panasonic_ckp")) == 0)
-        {
-          panasonicCKP->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 2, 1);
+        foundHeatpump = false;
+        heatpumpIndex=0;
 
-          // Send the 'timer cancel' signal 2 minutes later
-          if (panasonicCancelTimer != 0)
+        while (heatpumpIR[heatpumpIndex] != NULL && foundHeatpump == false)
+        {
+          if (strstr(heatpumpIR[heatpumpIndex]->supportedModel(), model->valuestring) != NULL)
           {
-            timer.stop(panasonicCancelTimer);
-            panasonicCancelTimer = 0;
-          }
-          
-          // Note that the argument to 'timer.after' has to be explicitly cast into 'long'
-          panasonicCancelTimer = timer.after(2L*60L*1000L, sendPanasonicCKPCancelTimer);
-        }
-#endif
-#if SUPPORT_PANASONIC == 1
-        else if (strcmp_P(model->valuestring, PSTR("panasonic_dke")) == 0)
-        {
-          panasonicDKE->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 2, 1);
-        }
-        else if (strcmp_P(model->valuestring, PSTR("panasonic_jke")) == 0)
-        {
-          panasonicJKE->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 2, 1);
-        }
-        else if (strcmp_P(model->valuestring, PSTR("panasonic_nke")) == 0)
-        {
-          panasonicNKE->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 2, 1);
-        }
-#endif
-#if SUPPORT_MIDEA == 1
-        else if (strcmp_P(model->valuestring, PSTR("midea")) == 0)
-        {
-          midea->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
-        }
-#endif
-#if SUPPORT_CARRIER == 1
-        else if (strcmp_P(model->valuestring, PSTR("carrier")) == 0)
-        {
-          carrier->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
-        }
-#endif
-#if SUPPORT_FUJITSU == 1
-        else if (strcmp_P(model->valuestring, PSTR("fujitsu_awyz")) == 0)
-        {
-          fujitsu->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
-        }
-#endif
-#if SUPPORT_MITSUBISHI == 1
-        else if (strcmp_P(model->valuestring, PSTR("mitsubishi_fd")) == 0)
-        {
-          mitsubishi->send(irSender, power->valueint, mode->valueint, fan->valueint, temperature->valueint, 0, 0);
-        }
-#endif
-      }
-    }
+            foundHeatpump = true;
 
-    // Free the memory used by the JSON objects
-    aJson.deleteItem(jsonObject);
+            Serial.print(F("Found: "));
+            Serial.print(model->valuestring);
+            Serial.print(F(" -> "));
+            Serial.println(heatpumpIR[heatpumpIndex]->supportedModel());
+
+            // Free the memory used by the JSON objects
+            // I'm repeating myself a bit, but free SRAM is really needed...
+            aJson.deleteItem(jsonObject);
+
+            // Send the IR command
+            Serial.println(F("Sending IR"));
+            heatpumpIR[heatpumpIndex]->send(irSender, powerCmd, operatingModeCmd, fanSpeedCmd, temperatureCmd, VDIR_UP, HDIR_MIDDLE);
+           }
+
+          heatpumpIndex++;
+        }
+
+      }
+    } else {
+      // Free the memory used by the JSON objects
+      aJson.deleteItem(jsonObject);
+    }
   }
 }
 
@@ -339,6 +284,46 @@ void sendPanasonicCKPCancelTimer()
   panasonicCKP->sendPanasonicCKPCancelTimer(irSender);
 }
 #endif
+
+// Send the JSON info about all supported heatpumps into the Stream (UDP, TCP etc)
+// If the stream is NULL, just return the number of bytes which would be sent
+int sendHeatpumpJson(Stream *stream)
+{
+  int i;
+  int bytesSent;
+
+  const prog_char* header PROGMEM = ",\"heatpumpmodels\":[";
+  if (stream != NULL) {
+    stream->write(header);
+  }
+  bytesSent = strlen(header);
+
+  i = 0;
+  do {
+    // Send the same IR command to all supported heatpumps
+    if (stream != NULL) {
+      stream->write(heatpumpIR[i]->supportedModel());
+    }
+    bytesSent += strlen(heatpumpIR[i]->supportedModel());
+
+    if (heatpumpIR[i+1] != NULL) {
+      if (stream != NULL) {
+        stream->write(",");
+      }
+      bytesSent++;
+    }
+
+  }
+  while (heatpumpIR[++i] != NULL);
+
+  if (stream != NULL) {
+    stream->write("]");
+  }
+  bytesSent++;
+
+  return bytesSent;
+}
+
 
 // Random MAC based on:
 // http://files.pcode.nl/arduino/EthernetPersistentMAC.ino
@@ -384,6 +369,18 @@ void generateMAC()
   // Print out the MAC address
   Serial.print(F("MAC: "));
   Serial.println(macstr);
+}
+
+//
+// Free RAM - for figuring out the reason to upgrade from IDE 1.0.1 to 1.0.5
+// Returns the free RAM in bytes - you'd be surprised to see how little that is :)
+// http://playground.arduino.cc/Code/AvailableMemory
+//
+
+int freeRam () {
+  extern int __heap_start, *__brkval;
+  int v;
+  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval);
 }
 
 // The most important thing of all, feed the watchdog
