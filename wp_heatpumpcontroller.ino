@@ -18,12 +18,12 @@
 Notification *notification = new Notification();
 
 // Save some memory by not including support for all of the heatpumps
-#define SUPPORT_PANASONIC     1 // Panasonic DKE, JKE, NKE
+#define SUPPORT_PANASONIC     0 // Panasonic DKE, JKE, NKE
 #define SUPPORT_PANASONIC_CKP 1 // Panasonic CKP
 #define SUPPORT_FUJITSU       0
 #define SUPPORT_CARRIER       0
 #define SUPPORT_MIDEA         0
-#define SUPPORT_MITSUBISHI    1
+#define SUPPORT_MITSUBISHI    0
 
 // DHCP or static IP address. DHCP requires almost 3kbytes more flash
 #define DHCP 0                     // 0 for static IP address, 1 for DHCP
@@ -227,7 +227,7 @@ void loop()
 
     aJsonObject* pushurl_channel = aJson.getObjectItem(jsonObject, "channel");
 
-    if (pushurl_channel != NULL)
+    if (pushurl_channel != NULL && pushurl_channel->type != aJson_NULL))
     {
       Serial.print(F("Pushurl channel: "));
       Serial.println(pushurl_channel->valuestring);
@@ -238,7 +238,7 @@ void loop()
       // Create the response JSON just by printing it - this consumes less memory than using the aJson
       snprintf_P(response, sizeof(response), responseFmt, command->valuestring, macstr);
       
-      if (pushurl_channel == NULL) {
+      if (pushurl_channel == NULL || pushurl_channel->type == aJson_NULL)) {
         notification->sendUDPNotification(WPudp, pushurl_channel, response, heatpumpModelData);
       }
       else {
@@ -260,7 +260,7 @@ void loop()
 
         // Create the response JSON just by printing it - this consumes less memory than using the aJson
         snprintf_P(response, sizeof(response), responseFmt, command->valuestring, macstr);
-        if (pushurl_channel == NULL) {
+        if (pushurl_channel == NULL || pushurl_channel->type == aJson_NULL)) {
           notification->sendUDPNotification(WPudp, pushurl_channel, response, NULL);
         }
         else {
