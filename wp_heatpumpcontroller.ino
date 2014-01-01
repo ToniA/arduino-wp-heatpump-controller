@@ -287,12 +287,10 @@ void loop()
 
             // Is this a Panasonic CKP?
             if (strcmp(model->valuestring, "panasonic_ckp") == 0) {
-              Serial.println(F("Scheduling timer cancel for Panasonic CKP"));
-
               // Send the 'timer cancel' signal 2 minutes later
               if (panasonicCancelTimer != 0)
               {
-                Serial.println(F("Canceling existing timer"));
+                Serial.println(F("Canceling existing Panasonic CKP timer"));
                 timer.stop(panasonicCancelTimer);
                 panasonicCancelTimer = 0;
               }
@@ -302,6 +300,7 @@ void loop()
 
               // Note that the argument to 'timer.after' has to be explicitly cast into 'long'
               // This timer fires in two minutes
+              Serial.println(F("Scheduling timer cancel for Panasonic CKP"));
               panasonicCancelTimer = timer.after(2L*60L*1000L, sendPanasonicCKPCancelTimer);
             }
           }
