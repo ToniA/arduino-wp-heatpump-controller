@@ -8,8 +8,6 @@
 #include <EEPROM.h>
 
 // The default Timer class consumes 0xAA bytes of SRAM for the 10 timers on 'timer'
-// https://github.com/dehapama/Timer is a fork which allows the number of timers to be configured,
-#define MAX_NUMBER_OF_EVENTS 3 // 3 timers consume just 0x33 bytes of SRAM
 #include <Timer.h>             // For the Panasonic CKP cancel timer, and for the watchdog
 
 // aJSON.h consumes 0x100 bytes of SRAM for 'global_buffer'
@@ -31,25 +29,47 @@ Notification *notification = new Notification();
 #include <MideaHeatpumpIR.h>
 #include <MitsubishiHeatpumpIR.h>
 
-// Infrared LED on digital PIN 3 (needs a PWM pin)
-// Connect with 100 Ohm resistor in series to GND
-#define IR_LED_PIN        3
-
-IRSender irSender(IR_LED_PIN);
+// Data about the heatpumps
+static const prog_char panaCKPModel[] PROGMEM = "panasonic_ckp";
+static const prog_char panaCKPInfo[]  PROGMEM = "{\"mdl\":\"panasonic_ckp\",\"dn\":\"Panasonic CKP\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":6}";
+static const prog_char panaDKEModel[] PROGMEM = "panasonic_dke";
+static const prog_char panaDKEInfo[]  PROGMEM = "{\"mdl\":\"panasonic_dke\",\"dn\":\"Panasonic DKE\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":6}";
+static const prog_char panaJKEModel[] PROGMEM = "panasonic_jke";
+static const prog_char panaJKEInfo[]  PROGMEM = "{\"mdl\":\"panasonic_jke\",\"dn\":\"Panasonic JKE\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":6}";
+static const prog_char panaNKEModel[] PROGMEM = "panasonic_nke";
+static const prog_char panaNKEInfo[]  PROGMEM = "{\"mdl\":\"panasonic_nke\",\"dn\":\"Panasonic NKE\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":6,\"maint\":[8,10]}";
+static const prog_char carrierModel[] PROGMEM = "carrier";
+static const prog_char carrierInfo[]  PROGMEM = "{\"mdl\":\"carrier\",\"dn\":\"Carrier\",\"mds\":5,\"mT\":17,\"xT\":30,\"fs\":6}";
+static const prog_char mideaModel[]   PROGMEM = "midea";
+static const prog_char mideaInfo[]    PROGMEM = "{\"mdl\":\"midea\",\"dn\":\"Ultimate Pro Plus 13FP\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":4,\"maint\":[10]}";
+static const prog_char fujitsuModel[] PROGMEM = "fujitsu_awyz";
+static const prog_char fujitsuInfo[]  PROGMEM = "{\"mdl\":\"fujitsu_awyz\",\"dn\":\"Fujitsu AWYZ\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":5}";
+static const prog_char mitsuFDModel[] PROGMEM = "mitsubishi_fd";
+static const prog_char mitsuFDInfo[]  PROGMEM = "{\"mdl\":\"mitsubishi_fd\",\"dn\":\"Mitsubishi FD\",\"mds\":5,\"mT\":16,\"xT\":31,\"fs\":5}";
+static const prog_char mitsuFEModel[] PROGMEM = "mitsubishi_fe";
+static const prog_char mitsuFEInfo[]  PROGMEM = "{\"mdl\":\"mitsubishi_fe\",\"dn\":\"Mitsubishi FE\",\"mds\":5,\"mT\":16,\"xT\":31,\"fs\":5,\"maint\":[10]}";
 
 // Array with all supported heatpumps, comment out the ones which are not needed (to save FLASH and SRAM on Duemilanove)
 HeatpumpIR *heatpumpIR[] = {
-                             new PanasonicCKPHeatpumpIR(),
-                             new PanasonicDKEHeatpumpIR(),
-                             new PanasonicJKEHeatpumpIR(),
-                             new PanasonicNKEHeatpumpIR(),
-                             // new CarrierHeatpumpIR(),
-                             // new MideaHeatpumpIR(),
-                             // new FujitsuHeatpumpIR(),
-                             new MitsubishiFDHeatpumpIR(),
-                             // new MitsubishiFEHeatpumpIR(),
+                             new PanasonicCKPHeatpumpIR(panaCKPModel, panaCKPInfo),
+                             new PanasonicDKEHeatpumpIR(panaDKEModel, panaDKEInfo),
+                             new PanasonicJKEHeatpumpIR(panaJKEModel, panaJKEInfo),
+                             new PanasonicNKEHeatpumpIR(panaNKEModel, panaNKEInfo),
+                             new CarrierHeatpumpIR(carrierModel, carrierInfo),
+                             new MideaHeatpumpIR(mideaModel, mideaInfo),
+                             new FujitsuHeatpumpIR(fujitsuModel, fujitsuInfo),
+                             new MitsubishiFDHeatpumpIR(mitsuFDModel, mitsuFDInfo),
+                             new MitsubishiFEHeatpumpIR(mitsuFEModel, mitsuFEInfo),
                              NULL // The array must be NULL-terminated
                            };
+
+// For the Panasonic CKP timer cancel
+PanasonicCKPHeatpumpIR *panasonicCKP;
+
+// Infrared LED on digital PIN 3 (needs a PWM pin)
+// Connect with 100 Ohm resistor in series to GND
+#define IR_LED_PIN        3
+IRSender irSender(IR_LED_PIN);
 
 #if DHCP == 0
 IPAddress ip(STATIC_IP);  // This MAC/IP address pair should also be set as a static lease on the router, or set to be outside the DHCP address pool
@@ -212,9 +232,6 @@ void loop()
       else {
         notification->sendWPNotification(pushurl_channel, response, NULL, 3);
       }
-
-      // Free the memory used by the JSON objects
-      aJson.deleteItem(jsonObject);
     }
     else if (strcmp_P(command->valuestring, PSTR("command")) == 0)
     {
@@ -248,42 +265,61 @@ void loop()
 
         while (heatpumpIR[heatpumpIndex] != NULL && foundHeatpump == false)
         {
-          if (strstr(heatpumpIR[heatpumpIndex]->supportedModel(), model->valuestring) != NULL)
+          Serial.print(F("Looping for "));
+
+          char modelBuffer[20];
+
+          if (heatpumpIR[heatpumpIndex]->model() != NULL) {
+            strncpy_P(modelBuffer, heatpumpIR[heatpumpIndex]->model(), sizeof(modelBuffer));
+            Serial.println(modelBuffer);
+          }         
+
+          if (strstr(modelBuffer, model->valuestring) != NULL)
           {
             foundHeatpump = true;
 
             Serial.print(F("Found: "));
-            Serial.print(model->valuestring);
-            Serial.print(F(" -> "));
-            Serial.println(heatpumpIR[heatpumpIndex]->supportedModel());
-
-            // Free the memory used by the JSON objects
-            // I'm repeating myself a bit, but free SRAM is really needed...
-            aJson.deleteItem(jsonObject);
+            Serial.println(model->valuestring);
 
             // Send the IR command
             Serial.println(F("Sending IR"));
             heatpumpIR[heatpumpIndex]->send(irSender, powerCmd, operatingModeCmd, fanSpeedCmd, temperatureCmd, VDIR_UP, HDIR_MIDDLE);
-           }
 
+            // Is this a Panasonic CKP?
+            if (strcmp(model->valuestring, "panasonic_ckp") == 0) {
+              Serial.println(F("Scheduling timer cancel for Panasonic CKP"));
+
+              // Send the 'timer cancel' signal 2 minutes later
+              if (panasonicCancelTimer != 0)
+              {
+                Serial.println(F("Canceling existing timer"));
+                timer.stop(panasonicCancelTimer);
+                panasonicCancelTimer = 0;
+              }
+
+              // Set the Panasonic instance for 'sendPanasonicCKPCancelTimer'
+              panasonicCKP = (PanasonicCKPHeatpumpIR*)heatpumpIR[heatpumpIndex];
+
+              // Note that the argument to 'timer.after' has to be explicitly cast into 'long'
+              // This timer fires in two minutes
+              panasonicCancelTimer = timer.after(2L*60L*1000L, sendPanasonicCKPCancelTimer);
+            }
+          }
           heatpumpIndex++;
         }
-
       }
-    } else {
-      // Free the memory used by the JSON objects
-      aJson.deleteItem(jsonObject);
     }
+
+    // Free the memory used by the JSON objects
+    aJson.deleteItem(jsonObject);
   }
 }
 
-#if SUPPORT_PANASONIC_CKP == 1
 // Cancel the Panasonic CKP timer
 void sendPanasonicCKPCancelTimer()
 {
   panasonicCKP->sendPanasonicCKPCancelTimer(irSender);
 }
-#endif
 
 // Send the JSON info about all supported heatpumps into the Stream (UDP, TCP etc)
 // If the stream is NULL, just return the number of bytes which would be sent
@@ -291,6 +327,7 @@ int sendHeatpumpJson(Stream *stream)
 {
   int i;
   int bytesSent;
+  prog_char* info;
 
   const prog_char* header PROGMEM = ",\"heatpumpmodels\":[";
   if (stream != NULL) {
@@ -300,11 +337,17 @@ int sendHeatpumpJson(Stream *stream)
 
   i = 0;
   do {
-    // Send the same IR command to all supported heatpumps
-    if (stream != NULL) {
-      stream->write(heatpumpIR[i]->supportedModel());
+    info = (prog_char*)heatpumpIR[i]->info();
+
+    if (stream != NULL && info != NULL) {
+      // Info is a PROGMEM pointer, so need to write a byte at a time
+      while (char infoChar = pgm_read_byte(info++))
+      {
+        stream->write(infoChar);
+      }
+
+      bytesSent += strlen_P(heatpumpIR[i]->info());
     }
-    bytesSent += strlen(heatpumpIR[i]->supportedModel());
 
     if (heatpumpIR[i+1] != NULL) {
       if (stream != NULL) {
