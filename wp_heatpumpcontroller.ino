@@ -8,7 +8,7 @@
 #include <EEPROM.h>
 
 // The default Timer class consumes 0xAA bytes of SRAM for the 10 timers on 'timer'
-#include <Timer.h>             // For the Panasonic CKP cancel timer, and for the watchdog
+#include <Timer.h>        // For the Panasonic CKP cancel timer, and for the watchdog
 
 // aJSON.h consumes 0x100 bytes of SRAM for 'global_buffer'
 #include <aJSON.h>        // from https://github.com/interactive-matter/aJson
@@ -40,8 +40,10 @@ static const prog_char panaNKEModel[] PROGMEM = "panasonic_nke";
 static const prog_char panaNKEInfo[]  PROGMEM = "{\"mdl\":\"panasonic_nke\",\"dn\":\"Panasonic NKE\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":6,\"maint\":[8,10]}";
 static const prog_char carrierModel[] PROGMEM = "carrier";
 static const prog_char carrierInfo[]  PROGMEM = "{\"mdl\":\"carrier\",\"dn\":\"Carrier\",\"mds\":5,\"mT\":17,\"xT\":30,\"fs\":6}";
-static const prog_char mideaModel[]   PROGMEM = "midea";
-static const prog_char mideaInfo[]    PROGMEM = "{\"mdl\":\"midea\",\"dn\":\"Ultimate Pro Plus 13FP\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":4,\"maint\":[10]}";
+static const prog_char midea1Model[]  PROGMEM = "midea_basic"; // The basic and inverter Midea's are the same, this is just for the GUI
+static const prog_char midea1Info[]   PROGMEM = "{\"mdl\":\"midea_basic\",\"dn\":\"Ultimate Pro Plus Basic 10&13FP\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":4,\"maint\":[10]}";
+static const prog_char midea2Model[]  PROGMEM = "midea_inv";
+static const prog_char midea2Info[]   PROGMEM = "{\"mdl\":\"midea_inv\",\"dn\":\"Ultimate Pro Plus Inverter 9&12\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":4,\"maint\":[10]}";
 static const prog_char fujitsuModel[] PROGMEM = "fujitsu_awyz";
 static const prog_char fujitsuInfo[]  PROGMEM = "{\"mdl\":\"fujitsu_awyz\",\"dn\":\"Fujitsu AWYZ\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":5}";
 static const prog_char mitsuFDModel[] PROGMEM = "mitsubishi_fd";
@@ -56,7 +58,8 @@ HeatpumpIR *heatpumpIR[] = {
                              new PanasonicJKEHeatpumpIR(panaJKEModel, panaJKEInfo),
                              new PanasonicNKEHeatpumpIR(panaNKEModel, panaNKEInfo),
                              new CarrierHeatpumpIR(carrierModel, carrierInfo),
-                             new MideaHeatpumpIR(mideaModel, mideaInfo),
+                             new MideaHeatpumpIR(midea1Model, midea1Info),
+                             new MideaHeatpumpIR(midea2Model, midea2Info),
                              new FujitsuHeatpumpIR(fujitsuModel, fujitsuInfo),
                              new MitsubishiFDHeatpumpIR(mitsuFDModel, mitsuFDInfo),
                              new MitsubishiFEHeatpumpIR(mitsuFEModel, mitsuFEInfo),
