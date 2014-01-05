@@ -29,49 +29,27 @@ Notification *notification = new Notification();
 #include <MideaHeatpumpIR.h>
 #include <MitsubishiHeatpumpIR.h>
 
-// Data about the heatpumps
-static const prog_char panaCKPModel[] PROGMEM = "panasonic_ckp";
-static const prog_char panaCKPInfo[]  PROGMEM = "{\"mdl\":\"panasonic_ckp\",\"dn\":\"Panasonic CKP\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":6}";
-static const prog_char panaDKEModel[] PROGMEM = "panasonic_dke";
-static const prog_char panaDKEInfo[]  PROGMEM = "{\"mdl\":\"panasonic_dke\",\"dn\":\"Panasonic DKE\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":6}";
-static const prog_char panaJKEModel[] PROGMEM = "panasonic_jke";
-static const prog_char panaJKEInfo[]  PROGMEM = "{\"mdl\":\"panasonic_jke\",\"dn\":\"Panasonic JKE\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":6}";
-static const prog_char panaNKEModel[] PROGMEM = "panasonic_nke";
-static const prog_char panaNKEInfo[]  PROGMEM = "{\"mdl\":\"panasonic_nke\",\"dn\":\"Panasonic NKE\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":6,\"maint\":[8,10]}";
-static const prog_char carrierModel[] PROGMEM = "carrier";
-static const prog_char carrierInfo[]  PROGMEM = "{\"mdl\":\"carrier\",\"dn\":\"Carrier\",\"mds\":5,\"mT\":17,\"xT\":30,\"fs\":6}";
-static const prog_char midea1Model[]  PROGMEM = "midea_basic"; // The basic and inverter Midea's are the same, this is just for the GUI
-static const prog_char midea1Info[]   PROGMEM = "{\"mdl\":\"midea_basic\",\"dn\":\"Ultimate Pro Plus Basic 10&13FP\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":4,\"maint\":[10]}";
-static const prog_char midea2Model[]  PROGMEM = "midea_inv";
-static const prog_char midea2Info[]   PROGMEM = "{\"mdl\":\"midea_inv\",\"dn\":\"Ultimate Pro Plus Inverter 9&12\",\"mds\":6,\"mT\":16,\"xT\":30,\"fs\":4,\"maint\":[10]}";
-static const prog_char fujitsuModel[] PROGMEM = "fujitsu_awyz";
-static const prog_char fujitsuInfo[]  PROGMEM = "{\"mdl\":\"fujitsu_awyz\",\"dn\":\"Fujitsu AWYZ\",\"mds\":5,\"mT\":16,\"xT\":30,\"fs\":5}";
-static const prog_char mitsuFDModel[] PROGMEM = "mitsubishi_fd";
-static const prog_char mitsuFDInfo[]  PROGMEM = "{\"mdl\":\"mitsubishi_fd\",\"dn\":\"Mitsubishi FD\",\"mds\":5,\"mT\":16,\"xT\":31,\"fs\":5}";
-static const prog_char mitsuFEModel[] PROGMEM = "mitsubishi_fe";
-static const prog_char mitsuFEInfo[]  PROGMEM = "{\"mdl\":\"mitsubishi_fe\",\"dn\":\"Mitsubishi FE\",\"mds\":5,\"mT\":16,\"xT\":31,\"fs\":5,\"maint\":[10]}";
-
 // Array with all supported heatpumps, comment out the ones which are not needed (to save FLASH and SRAM on Duemilanove)
 HeatpumpIR *heatpumpIR[] = {
-                             new PanasonicCKPHeatpumpIR(panaCKPModel, panaCKPInfo),
-                             new PanasonicDKEHeatpumpIR(panaDKEModel, panaDKEInfo),
-                             new PanasonicJKEHeatpumpIR(panaJKEModel, panaJKEInfo),
-                             new PanasonicNKEHeatpumpIR(panaNKEModel, panaNKEInfo),
-                             new CarrierHeatpumpIR(carrierModel, carrierInfo),
-                             new MideaHeatpumpIR(midea1Model, midea1Info),
-                             new MideaHeatpumpIR(midea2Model, midea2Info),
-                             new FujitsuHeatpumpIR(fujitsuModel, fujitsuInfo),
-                             new MitsubishiFDHeatpumpIR(mitsuFDModel, mitsuFDInfo),
-                             new MitsubishiFEHeatpumpIR(mitsuFEModel, mitsuFEInfo),
+                             new PanasonicCKPHeatpumpIR(),
+                             new PanasonicDKEHeatpumpIR(),
+                             new PanasonicJKEHeatpumpIR(),
+                             new PanasonicNKEHeatpumpIR(),
+                             new CarrierHeatpumpIR(),
+                             new MideaHeatpumpIR(),
+                             new MideaHeatpumpIR(),
+                             new FujitsuHeatpumpIR(),
+                             new MitsubishiFDHeatpumpIR(),
+                             new MitsubishiFEHeatpumpIR(),
                              NULL // The array must be NULL-terminated
                            };
 
 // For the Panasonic CKP timer cancel
 PanasonicCKPHeatpumpIR *panasonicCKP;
 
-// Infrared LED on digital PIN 3 (needs a PWM pin)
+// Infrared LED on digital PIN 9 (needs a PWM pin)
 // Connect with 100 Ohm resistor in series to GND
-#define IR_LED_PIN        3
+#define IR_LED_PIN        9
 IRSender irSender(IR_LED_PIN);
 
 #if DHCP == 0
@@ -96,7 +74,7 @@ byte panasonicCancelTimer = 0;
 const int WPudpPort = 49722;
 
 // Ethernet shield reset pin
-#define ETHERNET_RST      A0
+#define ETHERNET_RST      8
 
 // Entropy pin needs to be unconnected
 #define ENTROPY_PIN       A5
@@ -174,6 +152,7 @@ void loop()
   aJsonObject* jsonObject;
   boolean foundHeatpump;
   int heatpumpIndex;
+  prog_char* heatpumpModel;
 
   // The JSON response
   char response[54];
@@ -270,14 +249,16 @@ void loop()
         {
           Serial.print(F("Looping for "));
 
-          char modelBuffer[20];
+          heatpumpModel = (prog_char*)heatpumpIR[heatpumpIndex]->model();
 
-          if (heatpumpIR[heatpumpIndex]->model() != NULL) {
-            strncpy_P(modelBuffer, heatpumpIR[heatpumpIndex]->model(), sizeof(modelBuffer));
-            Serial.println(modelBuffer);
-          }         
+          // 'heatpumpModel' is a PROGMEM pointer, so need to write a byte at a time
+          while (char infoChar = pgm_read_byte(heatpumpModel++))
+          {
+            Serial.print(infoChar);
+          }
+          Serial.println();
 
-          if (strstr(modelBuffer, model->valuestring) != NULL)
+          if (strcmp_P(model->valuestring, heatpumpIR[heatpumpIndex]->model()) == 0)
           {
             foundHeatpump = true;
 
@@ -289,7 +270,7 @@ void loop()
             heatpumpIR[heatpumpIndex]->send(irSender, powerCmd, operatingModeCmd, fanSpeedCmd, temperatureCmd, VDIR_UP, HDIR_MIDDLE);
 
             // Is this a Panasonic CKP?
-            if (strcmp(model->valuestring, "panasonic_ckp") == 0) {
+            if (strcmp_P(model->valuestring, PSTR("panasonic_ckp")) == 0) {
               // Send the 'timer cancel' signal 2 minutes later
               if (panasonicCancelTimer != 0)
               {
