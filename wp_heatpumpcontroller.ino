@@ -37,7 +37,6 @@ HeatpumpIR *heatpumpIR[] = {
                              new PanasonicNKEHeatpumpIR(),
                              new CarrierHeatpumpIR(),
                              new MideaHeatpumpIR(),
-                             new MideaHeatpumpIR(),
                              new FujitsuHeatpumpIR(),
                              new MitsubishiFDHeatpumpIR(),
                              new MitsubishiFEHeatpumpIR(),
