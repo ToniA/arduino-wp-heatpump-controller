@@ -94,8 +94,10 @@ Bill of materials
     * Don't try this with Arduino's with ATmega168, 1k of SRAM just isn't enough
 * Arduino Ethernet shield
 * IR led
-* 1 kOhm resistor for the IR led
+* 100 Ohm resistor for the IR led
+    * The range is not very impressive this way, just a couple of meters
+    * For higher output, use a ultra-bright IR led, and an amplifier (Arduino just drives a transistor which drives the IR led)
 		
-Connect an IR led (with 1k resistor in series) between GND and digital pin 3
+Connect an IR led (with 100 Ohm resistor in series) between GND and digital pin 3 (the schema now uses pin 9).
 
 ![Schema](https://raw.github.com/ToniA/arduino-wp-heatpump-controller/master/arduino_irsender_bb.png)
