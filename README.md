@@ -63,7 +63,28 @@ The output is
 message from ('192.168.0.12', 49722): {"command":"identify","identity":"02:26:89:28:25:C5"}
 message from ('192.168.0.12', 49722): {"command":"command","fan":4,"identity":"02:26:89:28:25:C5","mode":2,"model":"panasonic_ckp","power":1,"temperature":24}
 ```
-   
+
+... and a similar program in Perl using the 'Socket' library
+```
+use Socket;
+
+socket( SOCKET, PF_INET, SOCK_DGRAM, getprotobyname("udp") );
+
+my $broadcastAddr = sockaddr_in( 49722, INADDR_BROADCAST );
+setsockopt( SOCKET, SOL_SOCKET, SO_REUSEADDR, 1 );
+setsockopt( SOCKET, SOL_SOCKET, SO_BROADCAST, 1 );
+
+send( SOCKET, '{"command":"command","fan":2,"identity":"02:26:89:28:25:C5","mode":2,"model":"panasonic_ckp","power":1,"temperature":16}', 0,  $broadcastAddr );
+
+my $input;
+my $sockaddr = recv( SOCKET, $input, 2048, 0 );
+my ($port, $ip_address) = unpack_sockaddr_in($sockaddr);
+
+print inet_ntoa($ip_address) . " => $input\n";
+
+close SOCKET;
+```
+
 Schema
 ------
 
